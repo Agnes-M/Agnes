@@ -1,4 +1,5 @@
 import tempfile
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -6,14 +7,21 @@ import fitz
 
 from redact_pdfs import process_paths
 
+CHINESE_FONT = "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"
+
 
 def create_sample_pdf(target: Path, patient_name: str) -> None:
     document = fitz.open()
     page = document.new_page()
-    page.insert_text((72, 72), f"姓名：{patient_name}    性别：男    年龄：38岁")
-    page.insert_text((72, 102), "送检医生：李主任")
-    page.insert_text((72, 132), "送检单位：北京第一医院病理科")
-    page.insert_text((72, 162), "标本类型：血液")
+    page.insert_font(fontname="cjk", fontfile=CHINESE_FONT)
+    page.insert_text(
+        (72, 72),
+        f"姓名：{patient_name}    性别：男    年龄：38岁",
+        fontname="cjk",
+    )
+    page.insert_text((72, 102), "送检医生：李主任", fontname="cjk")
+    page.insert_text((72, 132), "送检单位：北京第一医院病理科", fontname="cjk")
+    page.insert_text((72, 162), "标本类型：血液", fontname="cjk")
     document.save(target)
     document.close()
 
@@ -22,7 +30,7 @@ def extract_text(pdf_path: Path) -> str:
     document = fitz.open(pdf_path)
     text = "".join(page.get_text() for page in document)
     document.close()
-    return text
+    return unicodedata.normalize("NFKC", text)
 
 
 class RedactPdfTests(unittest.TestCase):
@@ -39,15 +47,15 @@ class RedactPdfTests(unittest.TestCase):
 
             self.assertEqual(len(results), 1)
             self.assertTrue(output_pdf.exists())
-            self.assertIn("姓名：", text)
-            self.assertIn("年龄：", text)
-            self.assertIn("送检医生：", text)
-            self.assertIn("送检单位：", text)
+            self.assertIn("姓名:", text)
+            self.assertIn("年龄:", text)
+            self.assertIn("送检医生:", text)
+            self.assertIn("送检单位:", text)
             self.assertNotIn("张三", text)
             self.assertNotIn("38岁", text)
             self.assertNotIn("李主任", text)
             self.assertNotIn("北京第一医院病理科", text)
-            self.assertIn("标本类型：血液", text)
+            self.assertIn("标本类型:血液", text)
             self.assertGreaterEqual(results[0].redaction_count, 4)
 
     def test_processes_pdf_directory(self) -> None:

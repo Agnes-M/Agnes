@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
@@ -34,10 +35,9 @@ class RedactionRule:
 
 
 @dataclass(frozen=True)
-class SpanCharMap:
-    text: str
-    start: int
-    end: int
+class LineCharMap:
+    char: str
+    index: int
     rect: fitz.Rect
 
 
@@ -111,45 +111,58 @@ def iter_pdf_files(input_path: Path) -> Iterator[Path]:
             yield path
 
 
-def iter_line_maps(page: fitz.Page) -> Iterator[tuple[str, list[SpanCharMap]]]:
-    page_dict = page.get_text("dict")
+def iter_line_maps(page: fitz.Page) -> Iterator[tuple[str, list[LineCharMap]]]:
+    page_dict = page.get_text("rawdict")
     for block in page_dict.get("blocks", []):
         if block.get("type") != 0:
             continue
         for line in block.get("lines", []):
-            spans: list[SpanCharMap] = []
-            cursor = 0
+            chars: list[LineCharMap] = []
             parts: list[str] = []
             for span in line.get("spans", []):
-                text = span.get("text", "")
-                if not text:
-                    continue
-                start = cursor
-                end = cursor + len(text)
-                spans.append(
-                    SpanCharMap(
-                        text=text,
-                        start=start,
-                        end=end,
-                        rect=fitz.Rect(span["bbox"]),
+                for char_data in span.get("chars", []):
+                    char = char_data.get("c", "")
+                    if not char:
+                        continue
+                    chars.append(
+                        LineCharMap(
+                            char=char,
+                            index=len(parts),
+                            rect=fitz.Rect(char_data["bbox"]),
+                        )
                     )
-                )
-                parts.append(text)
-                cursor = end
+                    parts.append(char)
 
             line_text = "".join(parts)
-            if spans and line_text.strip():
-                yield line_text, spans
+            if chars and line_text.strip():
+                yield line_text, chars
+
+
+def normalize_with_index_map(text: str) -> tuple[str, list[int]]:
+    normalized_chars: list[str] = []
+    index_map: list[int] = []
+    for original_index, char in enumerate(text):
+        normalized = unicodedata.normalize("NFKC", char)
+        for normalized_char in normalized:
+            normalized_chars.append(normalized_char)
+            index_map.append(original_index)
+    return "".join(normalized_chars), index_map
 
 
 def iter_sensitive_ranges(
     line_text: str, rules: Sequence[RedactionRule] = DEFAULT_RULES
 ) -> Iterator[tuple[str, int, int]]:
+    normalized_line, index_map = normalize_with_index_map(line_text)
     seen: set[tuple[str, int, int]] = set()
     for rule in rules:
         for pattern in rule.patterns:
-            for match in pattern.finditer(line_text):
-                start, end = match.span("value")
+            for match in pattern.finditer(normalized_line):
+                normalized_start, normalized_end = match.span("value")
+                if normalized_start == normalized_end:
+                    continue
+
+                start = index_map[normalized_start]
+                end = index_map[normalized_end - 1] + 1
                 if start == end:
                     continue
 
@@ -167,48 +180,29 @@ def iter_sensitive_ranges(
                     yield marker
 
 
-def slice_span_rect(
-    rect: fitz.Rect, text: str, relative_start: int, relative_end: int
-) -> fitz.Rect:
-    if not text:
-        return rect
-
-    char_count = max(len(text), 1)
-    width = rect.x1 - rect.x0
-    if width <= 0:
-        return rect
-
-    char_width = width / char_count
-    left = rect.x0 + (relative_start * char_width)
-    right = rect.x0 + (relative_end * char_width)
-    padding = min(max(char_width * 0.2, 0.4), 1.5)
-    return fitz.Rect(
-        max(rect.x0, left - padding),
-        rect.y0 - 0.5,
-        min(rect.x1, right + padding),
-        rect.y1 + 0.5,
-    )
-
-
 def rects_for_range(
-    spans: Sequence[SpanCharMap], range_start: int, range_end: int
+    chars: Sequence[LineCharMap], range_start: int, range_end: int
 ) -> list[fitz.Rect]:
-    rects: list[fitz.Rect] = []
-    for span in spans:
-        overlap_start = max(range_start, span.start)
-        overlap_end = min(range_end, span.end)
-        if overlap_start >= overlap_end:
-            continue
+    relevant = [
+        char.rect
+        for char in chars
+        if range_start <= char.index < range_end and char.char.strip()
+    ]
+    if not relevant:
+        return []
 
-        relative_start = overlap_start - span.start
-        relative_end = overlap_end - span.start
-        if not span.text[relative_start:relative_end].strip():
-            continue
+    combined = fitz.Rect(relevant[0])
+    for rect in relevant[1:]:
+        combined.include_rect(rect)
 
-        rects.append(
-            slice_span_rect(span.rect, span.text, relative_start, relative_end)
-        )
-    return rects
+    padding = 0.6
+    combined = fitz.Rect(
+        combined.x0 - padding,
+        combined.y0 - 0.5,
+        combined.x1 + padding,
+        combined.y1 + 0.5,
+    )
+    return [combined]
 
 
 def unique_rects(rects: Iterable[fitz.Rect]) -> list[fitz.Rect]:
