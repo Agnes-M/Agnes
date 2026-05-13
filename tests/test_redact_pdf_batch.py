@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 import fitz
+import redact_pdf_batch_windows as windows_script
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "redact_pdf_batch.py"
@@ -324,6 +325,25 @@ class PdfRedactionCliTests(unittest.TestCase):
             self.assertNotIn("王医生", redacted_text)
             self.assertIn("检测结果:阴性", redacted_text)
             self.assertIn("检测结果:弱阳性", redacted_text)
+
+    def test_windows_wrapper_collects_pdfs_recursively_and_preserves_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            input_dir = base / "报告清单"
+            nested_dir = input_dir / "病理1-92"
+            nested_dir.mkdir(parents=True)
+
+            source_pdf = nested_dir / "report.pdf"
+            create_sample_pdf(source_pdf)
+
+            pdf_files = windows_script.collect_pdf_files(input_dir, recursive=True)
+            self.assertEqual(pdf_files, [source_pdf])
+
+            output_dir = base / "报告清单_脱敏"
+            output_pdf = windows_script.resolve_output_path(
+                source_pdf, input_dir, output_dir, "_脱敏"
+            )
+            self.assertEqual(output_pdf, output_dir / "病理1-92" / "report_脱敏.pdf")
 
 
 if __name__ == "__main__":

@@ -10,14 +10,15 @@ from typing import Iterable, Sequence
 import fitz
 
 
-INPUT_DIR = Path(r"C:\Users\lingy\Desktop\招标文件\报告清单\病理1-92")
-OUTPUT_DIR = Path(r"C:\Users\lingy\Desktop\招标文件\报告清单\病理1-92_脱敏")
+INPUT_DIR = Path(r"C:\Users\lingy\Desktop\招标文件\报告清单")
+OUTPUT_DIR = Path(r"C:\Users\lingy\Desktop\招标文件\报告清单_脱敏")
 
 # 每个 PDF 最多处理前几页；如果想处理全部页面，改成 None
 MAX_PAGES = 3
 
 FILL_COLOR = (1, 1, 1)
 OUTPUT_SUFFIX = "_脱敏"
+RECURSIVE = True
 
 FIELD_SEPARATOR_PATTERN = r"\s{2,}|[|｜]"
 SKIP_VALUES = frozenset({"/", "\\", "无"})
@@ -283,13 +284,23 @@ def redact_pdf(
     return total_redactions
 
 
+def collect_pdf_files(input_dir: Path, recursive: bool) -> list[Path]:
+    pattern = "**/*.pdf" if recursive else "*.pdf"
+    return sorted(path for path in input_dir.glob(pattern) if path.is_file())
+
+
+def resolve_output_path(source_pdf: Path, input_dir: Path, output_dir: Path, suffix: str) -> Path:
+    relative = source_pdf.relative_to(input_dir)
+    return output_dir / relative.with_name(f"{relative.stem}{suffix}.pdf")
+
+
 def batch_redact() -> None:
     if not INPUT_DIR.exists():
         print(f"输入文件夹不存在：{INPUT_DIR}")
         return
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    pdf_files = sorted(path for path in INPUT_DIR.glob("*.pdf") if path.is_file())
+    pdf_files = collect_pdf_files(INPUT_DIR, RECURSIVE)
 
     if not pdf_files:
         print(f"没有找到 PDF 文件：{INPUT_DIR}")
@@ -299,8 +310,8 @@ def batch_redact() -> None:
     fail = 0
 
     for index, pdf_file in enumerate(pdf_files, start=1):
-        output_pdf = OUTPUT_DIR / f"{pdf_file.stem}{OUTPUT_SUFFIX}.pdf"
-        print(f"\n[{index}/{len(pdf_files)}] 正在处理：{pdf_file.name}")
+        output_pdf = resolve_output_path(pdf_file, INPUT_DIR, OUTPUT_DIR, OUTPUT_SUFFIX)
+        print(f"\n[{index}/{len(pdf_files)}] 正在处理：{pdf_file}")
 
         try:
             redaction_count = redact_pdf(pdf_file, output_pdf, FILL_COLOR, MAX_PAGES)
