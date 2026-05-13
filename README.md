@@ -46,6 +46,12 @@ python3 redact_pdf_batch.py ./input_pdfs ./output_pdfs --fill-color black
 python3 redact_pdf_batch.py ./report.pdf ./report_redacted.pdf
 ```
 
+病理/检验报告专用批处理脚本（兼容 `姓名`、`受检者`、`条形码`、`公司条码`、`样本编号`、`送检单位`、`送检医院`、`送检医生`、`送检医师`）：
+
+```bash
+python3 medical_report_redactor.py ./input_pdfs ./output_pdfs --max-pages 3
+```
+
 ## 输出规则
 
 - 目录模式下，输出文件名默认追加 `_redacted`
@@ -60,8 +66,11 @@ python3 redact_pdf_batch.py ./report.pdf ./report_redacted.pdf
 - `送检医生` / `送检医师`
 - `送检单位`
 
+`medical_report_redactor.py` 不再使用“先提取字段值，再 `search_for(value)` 回搜”的方式，而是直接在 `rawdict` 的字符坐标上匹配并擦除，因此对换行、全角空格、兼容字形和碎片化文本更稳。
+
 ## 测试
 
 ```bash
 python3 -m unittest tests/test_redact_pdf_batch.py
+python3 -m unittest tests/test_medical_report_redactor.py
 ```
