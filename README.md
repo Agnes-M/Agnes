@@ -3,9 +3,15 @@
 这个脚本用于批量处理 PDF，把以下敏感信息从文档里直接擦除：
 
 - 姓名
+- 受检者
 - 年龄
+- 条形码
+- 公司条码
+- 样本编号
 - 送检医生
+- 送检医师
 - 送检单位
+- 送检医院
 
 它会保留字段标签本身，只删除字段值，例如把 `姓名：张三` 处理成 `姓名：`。
 
@@ -46,6 +52,12 @@ python3 redact_pdf_batch.py ./input_pdfs ./output_pdfs --fill-color black
 python3 redact_pdf_batch.py ./report.pdf ./report_redacted.pdf
 ```
 
+只处理每个 PDF 的前 3 页：
+
+```bash
+python3 redact_pdf_batch.py ./input_pdfs ./output_pdfs --max-pages 3
+```
+
 ## 输出规则
 
 - 目录模式下，输出文件名默认追加 `_redacted`
@@ -56,9 +68,15 @@ python3 redact_pdf_batch.py ./report.pdf ./report_redacted.pdf
 脚本会按页面逐行读取文字字符坐标，识别以下字段后，对字段值区域执行 PDF redaction：
 
 - `姓名`
+- `受检者`
 - `年龄`
+- `条形码`
+- `公司条码`
+- `样本编号`
 - `送检医生` / `送检医师`
-- `送检单位`
+- `送检单位` / `送检医院`
+
+相比“先 `get_text()` 提值、再 `search_for()` 回找坐标”的做法，这种字符级定位方式对 PDF 中的换行、空格和兼容字形更稳。
 
 ## 测试
 

@@ -12,7 +12,8 @@ from typing import Iterable, Sequence
 import fitz
 
 
-FIELD_STOP_PATTERN = r"(?=(?:\s{2,}|[|｜]|(?:[A-Za-z\u4e00-\u9fff]{1,8}\s*[:：]))|$)"
+FIELD_SEPARATOR_PATTERN = r"\s{2,}|[|｜]"
+SKIP_VALUES = frozenset({"/", "\\", "无"})
 
 
 @dataclass(frozen=True)
@@ -21,28 +22,59 @@ class RedactionRule:
     pattern: re.Pattern[str]
 
 
-DEFAULT_RULES: tuple[RedactionRule, ...] = (
-    RedactionRule(
-        "姓名",
+def compile_text_rule(field_name: str, label_pattern: str, stop_pattern: str) -> RedactionRule:
+    return RedactionRule(
+        field_name,
         re.compile(
-            rf"(?P<label>(?:患者)?姓名)\s*[:：]?\s*(?P<value>.+?){FIELD_STOP_PATTERN}"
+            rf"(?P<label>{label_pattern})\s*[:：]?\s*(?P<value>.+?)(?=(?:{FIELD_SEPARATOR_PATTERN}|{stop_pattern})|$)"
         ),
+    )
+
+
+def compile_code_rule(field_name: str, label_pattern: str) -> RedactionRule:
+    return RedactionRule(
+        field_name,
+        re.compile(rf"(?P<label>{label_pattern})\s*[:：]?\s*(?P<value>[A-Za-z0-9\-_\/]+)"),
+    )
+
+
+DEFAULT_RULES: tuple[RedactionRule, ...] = (
+    compile_text_rule(
+        "姓名",
+        r"(?:患者)?姓\s*名",
+        r"性\s*别(?:\s*[:：])?|门诊/住院号(?:\s*[:：])?|条形码(?:\s*[:：])?|报告编号(?:\s*[:：])?|公司条码(?:\s*[:：])?",
     ),
     RedactionRule(
         "年龄",
         re.compile(r"(?P<label>年龄)\s*[:：]?\s*(?P<value>\d+\s*(?:岁|月)?)"),
     ),
-    RedactionRule(
-        "送检医生",
-        re.compile(
-            rf"(?P<label>送检医生|送检医师)\s*[:：]?\s*(?P<value>.+?){FIELD_STOP_PATTERN}"
-        ),
+    compile_text_rule(
+        "受检者",
+        r"受检者",
+        r"样本编号(?:\s*[:：])?",
     ),
-    RedactionRule(
+    compile_code_rule("条形码", r"条形码"),
+    compile_code_rule("公司条码", r"公司条码"),
+    compile_code_rule("样本编号", r"样本编号"),
+    compile_text_rule(
+        "送检医生",
+        r"送检医生",
+        r"其他信息(?:\s*[:：])?|联系电话(?:\s*[:：])?|采集时间(?:\s*[:：])?|样本类型(?:\s*[:：])?|临床诊断(?:\s*[:：])?",
+    ),
+    compile_text_rule(
+        "送检医师",
+        r"送检医师",
+        r"样本类型(?:\s*[:：])?|检测技术(?:\s*[:：])?|采样日期(?:\s*[:：])?|收样日期(?:\s*[:：])?|报告日期(?:\s*[:：])?",
+    ),
+    compile_text_rule(
         "送检单位",
-        re.compile(
-            rf"(?P<label>送检单位)\s*[:：]?\s*(?P<value>.+?){FIELD_STOP_PATTERN}"
-        ),
+        r"送检单位",
+        r"送检医生(?:\s*[:：])?|送检医师(?:\s*[:：])?|送检科室(?:\s*[:：])?|样本类型(?:\s*[:：])?|临床诊断(?:\s*[:：])?|备注(?:\s*[:：])?|检验者(?:\s*[:：])?|审核者(?:\s*[:：])?|批准人(?:\s*[:：])?",
+    ),
+    compile_text_rule(
+        "送检医院",
+        r"送检医院",
+        r"送检医生(?:\s*[:：])?|送检医师(?:\s*[:：])?|科室/病区(?:\s*[:：])?|门诊/住院号(?:\s*[:：])?|床号(?:\s*[:：])?",
     ),
 )
 
@@ -94,6 +126,11 @@ def normalize_line(chars: Sequence[dict]) -> tuple[str, list[int]]:
     return "".join(normalized_parts), normalized_to_original
 
 
+def should_redact_value(value: str) -> bool:
+    cleaned = value.replace("\n", " ").strip()
+    return bool(cleaned) and cleaned not in SKIP_VALUES
+
+
 def original_range_from_normalized(
     mapping: Sequence[int], normalized_start: int, normalized_end: int
 ) -> tuple[int, int] | None:
@@ -112,7 +149,7 @@ def find_redaction_rects(page: fitz.Page, rules: Sequence[RedactionRule]) -> lis
         for rule in rules:
             for match in rule.pattern.finditer(line_text):
                 value = match.group("value").strip()
-                if not value:
+                if not should_redact_value(value):
                     continue
                 original_range = original_range_from_normalized(
                     index_mapping, match.start("value"), match.end("value")
@@ -125,12 +162,20 @@ def find_redaction_rects(page: fitz.Page, rules: Sequence[RedactionRule]) -> lis
     return rects
 
 
-def redact_pdf(input_pdf: Path, output_pdf: Path, fill_color: tuple[float, float, float]) -> int:
+def redact_pdf(
+    input_pdf: Path,
+    output_pdf: Path,
+    fill_color: tuple[float, float, float],
+    max_pages: int | None = None,
+) -> int:
     doc = fitz.open(input_pdf)
     total_redactions = 0
 
     try:
-        for page in doc:
+        total_pages = len(doc)
+        page_count = total_pages if max_pages is None else min(total_pages, max_pages)
+        for page_index in range(page_count):
+            page = doc[page_index]
             page_rects = find_redaction_rects(page, DEFAULT_RULES)
             for rect in page_rects:
                 page.add_redact_annot(rect, fill=fill_color, text="")
@@ -195,6 +240,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="white",
         help="脱敏覆盖颜色，默认: white",
     )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help="每个 PDF 最多处理前 N 页，默认处理全部页面",
+    )
     return parser
 
 
@@ -211,6 +262,8 @@ def main() -> int:
     pdf_files = collect_pdf_files(input_path, recursive=args.recursive)
     if not pdf_files:
         parser.error("未找到任何 PDF 文件。")
+    if args.max_pages is not None and args.max_pages < 1:
+        parser.error("--max-pages 必须是大于 0 的整数。")
 
     fill_color = parse_fill_color(args.fill_color)
     total_files = 0
@@ -218,7 +271,7 @@ def main() -> int:
 
     for source_pdf in pdf_files:
         target_pdf = resolve_output_path(source_pdf, input_path, output_path, args.suffix)
-        redaction_count = redact_pdf(source_pdf, target_pdf, fill_color)
+        redaction_count = redact_pdf(source_pdf, target_pdf, fill_color, args.max_pages)
         total_files += 1
         total_redactions += redaction_count
         print(f"[OK] {source_pdf} -> {target_pdf} (脱敏 {redaction_count} 处)")
