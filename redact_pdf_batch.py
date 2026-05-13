@@ -11,66 +11,95 @@ from typing import Iterable, Sequence
 
 import fitz
 
-
-FIELD_STOP_PATTERN = r"(?=(?:\s{2,}|[|｜]|(?:[A-Za-z\u4e00-\u9fff]{1,8}\s*[:：]))|$)"
-
-
 @dataclass(frozen=True)
 class RedactionRule:
     field_name: str
     pattern: re.Pattern[str]
 
 
+@dataclass(frozen=True)
+class PageChar:
+    char: str
+    bbox: tuple[float, float, float, float]
+    line_id: int
+
+
 DEFAULT_RULES: tuple[RedactionRule, ...] = (
     RedactionRule(
         "姓名",
         re.compile(
-            rf"(?P<label>(?:患者)?姓名)\s*[:：]?\s*(?P<value>.+?){FIELD_STOP_PATTERN}"
+            r"(?P<label>姓\s*名|(?:患者)?姓名)\s*[:：]?\s*(?P<value>.*?)(?=\s+性\s*别|性别|门诊/住院号|条形码|报告编号|公司条码|$)",
+            re.S,
         ),
+    ),
+    RedactionRule(
+        "受检者",
+        re.compile(r"(?P<label>受检者)\s*[:：]?\s*(?P<value>.*?)(?=\s+样本编号|样本编号|$)", re.S),
     ),
     RedactionRule(
         "年龄",
         re.compile(r"(?P<label>年龄)\s*[:：]?\s*(?P<value>\d+\s*(?:岁|月)?)"),
     ),
     RedactionRule(
+        "条码编号",
+        re.compile(r"(?P<label>条形码|公司条码|样本编号)\s*[:：]?\s*(?P<value>[A-Za-z0-9\-_/]+)"),
+    ),
+    RedactionRule(
         "送检医生",
         re.compile(
-            rf"(?P<label>送检医生|送检医师)\s*[:：]?\s*(?P<value>.+?){FIELD_STOP_PATTERN}"
+            r"(?P<label>送检医生|送检医师)\s*[:：]?\s*(?P<value>.*?)(?=\s+送检单位|送检医院|其他信息|联系电话|采集时间|样本类型|临床诊断|检测技术|采样日期|收样日期|报告日期|$)",
+            re.S,
         ),
     ),
     RedactionRule(
         "送检单位",
         re.compile(
-            rf"(?P<label>送检单位)\s*[:：]?\s*(?P<value>.+?){FIELD_STOP_PATTERN}"
+            r"(?P<label>送检单位)\s*[:：]?\s*(?P<value>.*?)(?=\s+送检医生|送检医师|送检科室|样本类型|临床诊断|备注|检验者|审核者|批准人|$)",
+            re.S,
+        ),
+    ),
+    RedactionRule(
+        "送检医院",
+        re.compile(
+            r"(?P<label>送检医院)\s*[:：]?\s*(?P<value>.*?)(?=\s+送检医生|送检医师|科室/病区|门诊/住院号|床号|$)",
+            re.S,
         ),
     ),
 )
 
 
-def iter_line_chars(page: fitz.Page) -> Iterable[list[dict]]:
+def iter_page_chars(page: fitz.Page) -> Iterable[PageChar]:
     raw = page.get_text("rawdict")
+    line_id = 0
     for block in raw.get("blocks", []):
         if block.get("type") != 0:
             continue
         for line in block.get("lines", []):
-            chars: list[dict] = []
             for span in line.get("spans", []):
-                chars.extend(span.get("chars", []))
-            if chars:
-                yield chars
+                for char in span.get("chars", []):
+                    yield PageChar(char=char["c"], bbox=tuple(char["bbox"]), line_id=line_id)
+            line_id += 1
 
 
 def expand_rect(rect: fitz.Rect, margin: float = 0.8) -> fitz.Rect:
     return fitz.Rect(rect.x0 - margin, rect.y0 - margin, rect.x1 + margin, rect.y1 + margin)
 
 
-def rect_for_range(chars: Sequence[dict], start: int, end: int) -> fitz.Rect | None:
-    selected = chars[start:end]
+def clean_value(value: str) -> str:
+    return value.replace("\n", " ").strip()
+
+
+def should_skip_value(value: str) -> bool:
+    return not value or value in {"/", "\\", "无"}
+
+
+def rect_for_chars(chars: Sequence[PageChar]) -> fitz.Rect | None:
+    selected = list(chars)
     if not selected:
         return None
 
-    non_whitespace = [fitz.Rect(char["bbox"]) for char in selected if char["c"].strip()]
-    rects = non_whitespace or [fitz.Rect(char["bbox"]) for char in selected]
+    non_whitespace = [fitz.Rect(char.bbox) for char in selected if char.char.strip()]
+    rects = non_whitespace or [fitz.Rect(char.bbox) for char in selected]
     if not rects:
         return None
 
@@ -80,12 +109,15 @@ def rect_for_range(chars: Sequence[dict], start: int, end: int) -> fitz.Rect | N
     return expand_rect(rect)
 
 
-def normalize_line(chars: Sequence[dict]) -> tuple[str, list[int]]:
+def normalize_page_chars(chars: Sequence[PageChar]) -> tuple[str, list[int | None]]:
     normalized_parts: list[str] = []
-    normalized_to_original: list[int] = []
+    normalized_to_original: list[int | None] = []
 
     for index, char in enumerate(chars):
-        normalized_char = unicodedata.normalize("NFKC", char["c"])
+        if index and chars[index - 1].line_id != char.line_id:
+            normalized_parts.append("\n")
+            normalized_to_original.append(None)
+        normalized_char = unicodedata.normalize("NFKC", char.char)
         if not normalized_char:
             continue
         normalized_parts.append(normalized_char)
@@ -94,43 +126,94 @@ def normalize_line(chars: Sequence[dict]) -> tuple[str, list[int]]:
     return "".join(normalized_parts), normalized_to_original
 
 
-def original_range_from_normalized(
-    mapping: Sequence[int], normalized_start: int, normalized_end: int
-) -> tuple[int, int] | None:
+def original_indices_from_normalized(
+    mapping: Sequence[int | None], normalized_start: int, normalized_end: int
+) -> list[int]:
     if normalized_start >= len(mapping) or normalized_end == 0:
-        return None
+        return []
 
-    original_start = mapping[normalized_start]
-    original_end = mapping[normalized_end - 1] + 1
-    return original_start, original_end
+    indices: list[int] = []
+    for mapped_index in mapping[normalized_start:normalized_end]:
+        if mapped_index is None:
+            continue
+        if not indices or indices[-1] != mapped_index:
+            indices.append(mapped_index)
+    return indices
 
 
-def find_redaction_rects(page: fitz.Page, rules: Sequence[RedactionRule]) -> list[fitz.Rect]:
+def rects_for_original_indices(chars: Sequence[PageChar], indices: Sequence[int]) -> list[fitz.Rect]:
     rects: list[fitz.Rect] = []
-    for chars in iter_line_chars(page):
-        line_text, index_mapping = normalize_line(chars)
-        for rule in rules:
-            for match in rule.pattern.finditer(line_text):
-                value = match.group("value").strip()
-                if not value:
-                    continue
-                original_range = original_range_from_normalized(
-                    index_mapping, match.start("value"), match.end("value")
-                )
-                if original_range is None:
-                    continue
-                rect = rect_for_range(chars, original_range[0], original_range[1])
-                if rect is not None:
-                    rects.append(rect)
+    current_line_id: int | None = None
+    current_chars: list[PageChar] = []
+
+    for index in indices:
+        char = chars[index]
+        if current_line_id is None or char.line_id == current_line_id:
+            current_chars.append(char)
+            current_line_id = char.line_id
+            continue
+
+        rect = rect_for_chars(current_chars)
+        if rect is not None:
+            rects.append(rect)
+        current_chars = [char]
+        current_line_id = char.line_id
+
+    rect = rect_for_chars(current_chars)
+    if rect is not None:
+        rects.append(rect)
+
     return rects
 
 
-def redact_pdf(input_pdf: Path, output_pdf: Path, fill_color: tuple[float, float, float]) -> int:
+def dedupe_rects(rects: Sequence[fitz.Rect]) -> list[fitz.Rect]:
+    unique_rects: list[fitz.Rect] = []
+    seen: set[tuple[float, float, float, float]] = set()
+
+    for rect in rects:
+        key = (round(rect.x0, 2), round(rect.y0, 2), round(rect.x1, 2), round(rect.y1, 2))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_rects.append(rect)
+
+    return unique_rects
+
+
+def find_redaction_rects(page: fitz.Page, rules: Sequence[RedactionRule]) -> list[fitz.Rect]:
+    chars = list(iter_page_chars(page))
+    if not chars:
+        return []
+
+    page_text, index_mapping = normalize_page_chars(chars)
+    rects: list[fitz.Rect] = []
+
+    for rule in rules:
+        for match in rule.pattern.finditer(page_text):
+            value = clean_value(match.group("value"))
+            if should_skip_value(value):
+                continue
+            original_indices = original_indices_from_normalized(
+                index_mapping, match.start("value"), match.end("value")
+            )
+            rects.extend(rects_for_original_indices(chars, original_indices))
+
+    return dedupe_rects(rects)
+
+
+def redact_pdf(
+    input_pdf: Path,
+    output_pdf: Path,
+    fill_color: tuple[float, float, float],
+    max_pages: int | None = None,
+) -> int:
     doc = fitz.open(input_pdf)
     total_redactions = 0
 
     try:
-        for page in doc:
+        pages_to_process = len(doc) if max_pages is None else min(len(doc), max_pages)
+        for page_index in range(pages_to_process):
+            page = doc[page_index]
             page_rects = find_redaction_rects(page, DEFAULT_RULES)
             for rect in page_rects:
                 page.add_redact_annot(rect, fill=fill_color, text="")
@@ -195,6 +278,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="white",
         help="脱敏覆盖颜色，默认: white",
     )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help="每个 PDF 最多处理前几页；默认处理全部页面",
+    )
     return parser
 
 
@@ -218,7 +307,12 @@ def main() -> int:
 
     for source_pdf in pdf_files:
         target_pdf = resolve_output_path(source_pdf, input_path, output_path, args.suffix)
-        redaction_count = redact_pdf(source_pdf, target_pdf, fill_color)
+        redaction_count = redact_pdf(
+            source_pdf,
+            target_pdf,
+            fill_color,
+            max_pages=args.max_pages,
+        )
         total_files += 1
         total_redactions += redaction_count
         print(f"[OK] {source_pdf} -> {target_pdf} (脱敏 {redaction_count} 处)")
