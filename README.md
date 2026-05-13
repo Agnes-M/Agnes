@@ -29,6 +29,8 @@ python3 -m pip install -r requirements.txt
 
 ## 用法
 
+固定 Windows 路径版脚本见 `redact_pdf_batch_windows.py`，双击或执行 `python redact_pdf_batch_windows.py` 即可运行。
+
 处理整个目录：
 
 ```bash
