@@ -83,6 +83,69 @@ def create_multi_page_pdf(pdf_path: Path) -> None:
     doc.close()
 
 
+def create_header_and_result_pdf(pdf_path: Path) -> None:
+    doc = fitz.open()
+
+    first_page = doc.new_page()
+    first_page.insert_font(fontname="zh", fontfile=CHINESE_FONT)
+    first_page.insert_text(
+        (32, 40),
+        "张三 报告编号：HDR-001",
+        fontname="zh",
+        fontsize=12,
+    )
+    first_page.insert_text(
+        (72, 96),
+        "姓名：张三  性别：男  年龄：45岁",
+        fontname="zh",
+        fontsize=14,
+    )
+    first_page.insert_text(
+        (72, 126),
+        "报告编号：BODY-001",
+        fontname="zh",
+        fontsize=14,
+    )
+
+    second_page = doc.new_page()
+    second_page.insert_font(fontname="zh", fontfile=CHINESE_FONT)
+    second_page.insert_text(
+        (32, 40),
+        "张三 报告编号：HDR-002",
+        fontname="zh",
+        fontsize=12,
+    )
+    second_page.insert_text(
+        (72, 96),
+        "检测结果：阴性",
+        fontname="zh",
+        fontsize=14,
+    )
+
+    doc.save(pdf_path)
+    doc.close()
+
+
+def create_result_boundary_pdf(pdf_path: Path) -> None:
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_font(fontname="zh", fontfile=CHINESE_FONT)
+    page.insert_text(
+        (72, 96),
+        "送检单位：某某医院检测中心 检测结果：阴性",
+        fontname="zh",
+        fontsize=14,
+    )
+    page.insert_text(
+        (72, 126),
+        "送检医生：王医生 检测结果：弱阳性",
+        fontname="zh",
+        fontsize=14,
+    )
+    doc.save(pdf_path)
+    doc.close()
+
+
 class PdfRedactionCliTests(unittest.TestCase):
     def test_cli_redacts_target_fields_and_keeps_other_text(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -202,6 +265,65 @@ class PdfRedactionCliTests(unittest.TestCase):
 
             self.assertNotIn("第一页患者", page_texts[0])
             self.assertIn("第二页患者", page_texts[1])
+
+    def test_cli_redacts_header_name_and_report_number_only_in_top_left(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            input_dir = base / "input"
+            output_dir = base / "output"
+            input_dir.mkdir()
+
+            source_pdf = input_dir / "header.pdf"
+            create_header_and_result_pdf(source_pdf)
+
+            subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), str(input_dir), str(output_dir)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            output_pdf = output_dir / "header_redacted.pdf"
+            self.assertTrue(output_pdf.exists())
+
+            doc = fitz.open(output_pdf)
+            redacted_text = "\n".join(unicodedata.normalize("NFKC", page.get_text()) for page in doc)
+            doc.close()
+
+            self.assertNotIn("HDR-001", redacted_text)
+            self.assertNotIn("HDR-002", redacted_text)
+            self.assertNotIn("张三", redacted_text)
+            self.assertIn("报告编号:BODY-001", redacted_text)
+            self.assertIn("检测结果:阴性", redacted_text)
+
+    def test_cli_keeps_detection_results_when_redacting_adjacent_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            input_dir = base / "input"
+            output_dir = base / "output"
+            input_dir.mkdir()
+
+            source_pdf = input_dir / "result-boundary.pdf"
+            create_result_boundary_pdf(source_pdf)
+
+            subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), str(input_dir), str(output_dir)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            output_pdf = output_dir / "result-boundary_redacted.pdf"
+            self.assertTrue(output_pdf.exists())
+
+            doc = fitz.open(output_pdf)
+            redacted_text = "\n".join(unicodedata.normalize("NFKC", page.get_text()) for page in doc)
+            doc.close()
+
+            self.assertNotIn("某某医院检测中心", redacted_text)
+            self.assertNotIn("王医生", redacted_text)
+            self.assertIn("检测结果:阴性", redacted_text)
+            self.assertIn("检测结果:弱阳性", redacted_text)
 
 
 if __name__ == "__main__":
