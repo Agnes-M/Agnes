@@ -11,8 +11,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 WIDTH = 1280
 HEIGHT = 720
-FPS = 24
-SCENE_SECONDS = 5
+FPS = 20
+SCENE_SECONDS = 4
 TOTAL_SCENES = 6
 FRAMES_PER_SCENE = FPS * SCENE_SECONDS
 ARTIFACT_DIR = Path("/opt/cursor/artifacts")
@@ -76,11 +76,11 @@ def load_font(size: int):
     return ImageFont.truetype(FONT_PATH, size=size)
 
 
-TITLE_FONT = load_font(46)
-SUBTITLE_FONT = load_font(26)
-LABEL_FONT = load_font(24)
-SMALL_FONT = load_font(18)
-BIG_FONT = load_font(34)
+TITLE_FONT = load_font(36)
+SUBTITLE_FONT = load_font(22)
+LABEL_FONT = load_font(20)
+SMALL_FONT = load_font(16)
+BIG_FONT = load_font(28)
 
 
 def make_gradient():
@@ -94,6 +94,13 @@ def make_gradient():
             glow = blend((48, 146, 255), row, radial)
             px[x, y] = glow
     return base
+
+
+BASE_BG = make_gradient().convert("RGBA")
+VIGNETTE = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+_vdraw = ImageDraw.Draw(VIGNETTE)
+_vdraw.rectangle((0, 0, WIDTH, HEIGHT), fill=(0, 0, 0, 28))
+VIGNETTE = VIGNETTE.filter(ImageFilter.GaussianBlur(24))
 
 
 def add_glow(canvas, center, radius, color, alpha):
@@ -364,16 +371,12 @@ SCENE_DRAWERS = [scene_one, scene_two, scene_three, scene_four, scene_five, scen
 
 def render_frame(scene_idx: int, frame_idx: int):
     progress = frame_idx / FRAMES_PER_SCENE
-    canvas = make_gradient().convert("RGBA")
+    canvas = BASE_BG.copy()
     draw = ImageDraw.Draw(canvas, "RGBA")
     draw_title(draw, scene_idx + 1, SCENES[scene_idx]["title"])
     SCENE_DRAWERS[scene_idx](canvas, draw, progress)
     draw_subtitle(draw, SCENES[scene_idx]["subtitle"])
-    vignette = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
-    vdraw = ImageDraw.Draw(vignette)
-    vdraw.rectangle((0, 0, WIDTH, HEIGHT), fill=(0, 0, 0, 32))
-    vignette = vignette.filter(ImageFilter.GaussianBlur(30))
-    canvas.alpha_composite(vignette)
+    canvas.alpha_composite(VIGNETTE)
     fade = 1.0
     if progress < 0.12:
         fade = progress / 0.12
@@ -411,6 +414,7 @@ def main():
         frame_dir = temp_root / "frames"
         frame_dir.mkdir(parents=True, exist_ok=True)
         for scene_idx in range(TOTAL_SCENES):
+            print(f"Rendering scene {scene_idx + 1}/{TOTAL_SCENES}...", flush=True)
             for frame_idx in range(FRAMES_PER_SCENE):
                 image = render_frame(scene_idx, frame_idx)
                 absolute_idx = scene_idx * FRAMES_PER_SCENE + frame_idx
