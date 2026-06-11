@@ -334,7 +334,7 @@ def scene_five(canvas, draw, t):
             draw.line((x, y - 24, x, y + 22), fill=ACCENT_2, width=6)
             draw.line((x - 18, y - 2, x + 18, y - 2), fill=ACCENT_2, width=6)
         text_w = draw.textlength(label, font=LABEL_FONT)
-        draw.text((x - text_w / 2, y + 84), label, font=LABEL_FONT, fill=TEXT)
+        draw.text((x - text_w / 2, y + 100), label, font=LABEL_FONT, fill=TEXT)
     quote = "研究提示，ALDH2 突变携带者长期饮酒时的相关风险更值得警惕。"
     draw.rounded_rectangle((170, 522, 1110, 582), radius=22, fill=(5, 15, 32, 185))
     draw.text((208, 542), quote, font=LABEL_FONT, fill=TEXT)
