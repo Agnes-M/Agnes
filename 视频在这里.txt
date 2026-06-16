@@ -1,0 +1,18 @@
+酒精代谢基因科普视频已生成，请按以下路径查找：
+
+1. 推荐路径（最简单）：
+   output/酒精代谢基因科普视频.mp4
+
+2. 工作区根目录：
+   酒精代谢基因科普视频.mp4
+
+3. 英文文件名（根目录）：
+   alcohol_gene_3d_realistic_cn_voice_bgm.mp4
+
+在 Cursor 左侧文件树中：
+- 展开项目根目录 Agnes / workspace
+- 打开 output 文件夹
+- 右键视频文件 -> Download / 下载
+
+如果左侧仍看不到，可在 Cursor 顶部搜索框输入：
+酒精代谢基因科普视频.mp4
