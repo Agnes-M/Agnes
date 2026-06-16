@@ -15,6 +15,10 @@ HEIGHT = 720
 FPS = 20
 SCENE_PAD_SECONDS = 0.4
 MIN_SEGMENT_SECONDS = 2.5
+CROSSFADE_SAME_SCENE = 8       # 同场景分镜：0.4s 交叉淡入淡出
+CROSSFADE_SCENE_CHANGE = 14    # 跨场景：0.7s 交叉淡入淡出
+OPENING_FADE_FRAMES = 10       # 片头淡入
+ENDING_FADE_FRAMES = 12        # 片尾淡出
 ARTIFACT_DIR = Path("/opt/cursor/artifacts")
 OUTPUT_VIDEO = ARTIFACT_DIR / "alcohol_gene_3d_realistic_cn_voice_bgm.mp4"
 OUTPUT_POSTER = ARTIFACT_DIR / "alcohol_gene_3d_realistic_poster.png"
@@ -73,6 +77,20 @@ SEGMENTS = [
 def ease(t: float) -> float:
     t = max(0.0, min(1.0, t))
     return 3 * t * t - 2 * t * t * t
+
+
+def smootherstep(t: float) -> float:
+    t = max(0.0, min(1.0, t))
+    return t * t * t * (t * (t * 6 - 15) + 10)
+
+
+def transition_frame_count(seg_a: dict, seg_b: dict, frames_a: int, frames_b: int) -> int:
+    base = CROSSFADE_SCENE_CHANGE if seg_a["scene"] != seg_b["scene"] else CROSSFADE_SAME_SCENE
+    return max(0, min(base, frames_a // 3, frames_b // 3))
+
+
+def crossfade_images(img_from: Image.Image, img_to: Image.Image, t: float) -> Image.Image:
+    return Image.blend(img_from, img_to, smootherstep(t))
 
 
 def lerp(a: float, b: float, t: float) -> float:
@@ -403,7 +421,7 @@ SCENE_DRAWERS = [scene_one, scene_two, scene_three, scene_four, scene_five, scen
 
 
 def render_frame(segment: dict, frame_idx: int, frames_per_segment: int):
-    progress = frame_idx / max(1, frames_per_segment - 1) if frames_per_segment > 1 else 1.0
+    progress = smootherstep(frame_idx / max(1, frames_per_segment - 1) if frames_per_segment > 1 else 1.0)
     scene_idx = segment["scene"] - 1
     canvas = BASE_BG.copy()
     draw = ImageDraw.Draw(canvas, "RGBA")
@@ -412,14 +430,73 @@ def render_frame(segment: dict, frame_idx: int, frames_per_segment: int):
     add_realistic_grade(canvas, scene_idx, progress)
     draw_subtitle(draw, segment["narration"])
     canvas.alpha_composite(VIGNETTE)
-    fade = 1.0
-    if progress < 0.1:
-        fade = progress / 0.1
-    elif progress > 0.9:
-        fade = (1.0 - progress) / 0.1
-    if fade < 1.0:
-        canvas.alpha_composite(Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, int((1 - fade) * 255))))
     return canvas.convert("RGB")
+
+
+def render_segment_frames(segment: dict, frames_per_segment: int) -> list[Image.Image]:
+    return [render_frame(segment, i, frames_per_segment) for i in range(frames_per_segment)]
+
+
+def write_transitioned_frames(timings: list[dict], frame_dir: Path) -> int:
+    total_frames = 0
+    pending_tail: list[Image.Image] = []
+    pending_n = 0
+
+    def save_frame(image: Image.Image):
+        nonlocal total_frames
+        image.save(frame_dir / f"frame_{total_frames:05d}.png", quality=95)
+        total_frames += 1
+
+    for seg_idx, timing in enumerate(timings):
+        seg = timing["segment"]
+        seg_frames = render_segment_frames(seg, timing["frames"])
+
+        if pending_tail:
+            for i in range(pending_n):
+                t = i / max(1, pending_n - 1)
+                save_frame(crossfade_images(pending_tail[i], seg_frames[i], t))
+            seg_frames = seg_frames[pending_n:]
+
+        if seg_idx < len(timings) - 1:
+            n_next = transition_frame_count(
+                seg,
+                timings[seg_idx + 1]["segment"],
+                len(seg_frames),
+                timings[seg_idx + 1]["frames"],
+            )
+            if n_next > 0:
+                for frame in seg_frames[:-n_next]:
+                    save_frame(frame)
+                pending_tail = seg_frames[-n_next:]
+                pending_n = n_next
+            else:
+                for frame in seg_frames:
+                    save_frame(frame)
+                pending_tail = []
+                pending_n = 0
+        else:
+            for frame in seg_frames:
+                save_frame(frame)
+
+    # 片头片尾柔和淡入淡出，避免硬切黑场
+    first = Image.open(frame_dir / "frame_00000.png").convert("RGB")
+    for i in range(min(OPENING_FADE_FRAMES, total_frames)):
+        alpha = (i + 1) / OPENING_FADE_FRAMES
+        Image.blend(Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0)), first, smootherstep(alpha)).save(
+            frame_dir / f"frame_{i:05d}.png", quality=95
+        )
+
+    last_idx = total_frames - 1
+    last = Image.open(frame_dir / f"frame_{last_idx:05d}.png").convert("RGB")
+    end_n = min(ENDING_FADE_FRAMES, total_frames)
+    for i in range(end_n):
+        alpha = 1.0 - (i + 1) / end_n
+        frame_idx = last_idx - end_n + i + 1
+        Image.blend(Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0)), last, smootherstep(alpha)).save(
+            frame_dir / f"frame_{frame_idx:05d}.png", quality=95
+        )
+
+    return total_frames
 
 
 def encode_video(frame_dir: Path, silent_video: Path, frame_count: int):
@@ -467,7 +544,10 @@ def concat_voice_tracks(timings: list[dict], output_path: Path):
     for idx, item in enumerate(timings):
         inputs.extend(["-i", str(item["path"])])
         pad = max(0.0, item["seg_seconds"] - item["voice_duration"])
-        chains.append(f"[{idx}:a]apad=pad_dur={pad:.3f}[a{idx}]")
+        fade = 0.08
+        chains.append(
+            f"[{idx}:a]apad=pad_dur={pad:.3f},afade=t=in:st=0:d={fade},afade=t=out:st={max(fade, item['voice_duration'] - fade):.3f}:d={fade}[a{idx}]"
+        )
     concat_inputs = "".join(f"[a{idx}]" for idx in range(len(timings)))
     filter_graph = ";".join(chains) + f";{concat_inputs}concat=n={len(timings)}:v=0:a=1[aout]"
     subprocess.run(["ffmpeg", "-y", *inputs, "-filter_complex", filter_graph, "-map", "[aout]", str(output_path)], check=True)
@@ -507,15 +587,13 @@ def main():
         bgm_audio = temp_root / "bgm.wav"
         frame_dir.mkdir(parents=True, exist_ok=True)
         timings = asyncio.run(synthesize_segment_voices(temp_root))
-        total_frames = 0
         for idx, timing in enumerate(timings):
-            frames = timing["frames"]
             seg = timing["segment"]
-            print(f"Rendering segment {idx + 1}/{len(timings)} scene {seg['scene']} phase {seg['phase']}...", flush=True)
-            for frame_idx in range(frames):
-                image = render_frame(seg, frame_idx, frames)
-                image.save(frame_dir / f"frame_{total_frames:05d}.png", quality=95)
-                total_frames += 1
+            print(
+                f"Rendering segment {idx + 1}/{len(timings)} scene {seg['scene']} phase {seg['phase']}...",
+                flush=True,
+            )
+        total_frames = write_transitioned_frames(timings, frame_dir)
         shutil.copy(frame_dir / f"frame_{total_frames - 1:05d}.png", OUTPUT_POSTER)
         encode_video(frame_dir, silent_video, total_frames)
         concat_voice_tracks(timings, voice_audio)
