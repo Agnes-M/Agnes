@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import asyncio
 import math
 import os
 import shutil
@@ -6,6 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import edge_tts
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
@@ -16,9 +18,11 @@ SCENE_SECONDS = 4
 TOTAL_SCENES = 6
 FRAMES_PER_SCENE = FPS * SCENE_SECONDS
 ARTIFACT_DIR = Path("/opt/cursor/artifacts")
-OUTPUT_VIDEO = ARTIFACT_DIR / "alcohol_gene_3d_concept_video.mp4"
-OUTPUT_POSTER = ARTIFACT_DIR / "alcohol_gene_3d_concept_poster.png"
+OUTPUT_VIDEO = ARTIFACT_DIR / "alcohol_gene_3d_realistic_cn_voice_bgm.mp4"
+OUTPUT_POSTER = ARTIFACT_DIR / "alcohol_gene_3d_realistic_poster.png"
 FONT_PATH = "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"
+VOICE_NAME = "zh-CN-XiaoxiaoNeural"
+VOICE_RATE = "+18%"
 
 BG_TOP = (9, 22, 52)
 BG_BOTTOM = (28, 88, 149)
@@ -56,6 +60,15 @@ SCENES = [
         "title": "行动建议",
         "subtitle": "了解自己的基因，让健康选择更有依据。一次检测，长期参考。",
     },
+]
+
+NARRATION_LINES = [
+    "很多人都有这样的经历，同样喝一杯酒，反应却完全不同。",
+    "酒精进入体内后，先由 ADH 转化为乙醛，再由 ALDH2 继续分解。",
+    "根据 ALDH2 基因检测结果，可分为正常型、杂合突变和纯合突变三类。",
+    "检测流程通常包括咨询、采样、实验检测与报告解读，五到七个工作日可出结果。",
+    "了解代谢类型，不只是能不能喝酒，更关系到长期健康风险管理。",
+    "了解自己的基因，让健康选择更有依据。一次检测，长期参考。",
 ]
 
 
@@ -103,6 +116,20 @@ _vdraw.rectangle((0, 0, WIDTH, HEIGHT), fill=(0, 0, 0, 28))
 VIGNETTE = VIGNETTE.filter(ImageFilter.GaussianBlur(24))
 
 
+def make_texture_overlay():
+    layer = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    px = layer.load()
+    for y in range(HEIGHT):
+        for x in range(WIDTH):
+            val = ((x * 31 + y * 17 + (x // 9) * 13) % 100) / 100.0
+            alpha = int(10 + val * 16)
+            px[x, y] = (220, 230, 245, alpha)
+    return layer.filter(ImageFilter.GaussianBlur(0.6))
+
+
+TEXTURE_OVERLAY = make_texture_overlay()
+
+
 def add_glow(canvas, center, radius, color, alpha):
     layer = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
@@ -147,6 +174,23 @@ def draw_subtitle(draw, text):
     draw.rounded_rectangle((64, y0, WIDTH - 64, HEIGHT - 40), radius=26, fill=(5, 15, 32, 190))
     for idx, line in enumerate(lines):
         draw.text((96, y0 + 20 + idx * line_height), line, font=SUBTITLE_FONT, fill=TEXT)
+
+
+def add_realistic_grade(canvas, scene_idx: int, progress: float):
+    # Subtle scene-dependent color grading and specular bloom.
+    tint_palette = [(16, 40, 78), (10, 50, 72), (26, 46, 62), (18, 54, 78), (26, 42, 70), (20, 60, 84)]
+    tint = tint_palette[scene_idx % len(tint_palette)]
+    grade = Image.new("RGBA", (WIDTH, HEIGHT), tint + (20,))
+    canvas.alpha_composite(grade)
+    canvas.alpha_composite(TEXTURE_OVERLAY)
+
+    bloom = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    bdraw = ImageDraw.Draw(bloom)
+    cx = int(lerp(WIDTH * 0.2, WIDTH * 0.85, (progress + scene_idx * 0.11) % 1))
+    cy = int(HEIGHT * 0.22)
+    bdraw.ellipse((cx - 180, cy - 90, cx + 180, cy + 90), fill=(255, 255, 255, 24))
+    bloom = bloom.filter(ImageFilter.GaussianBlur(22))
+    canvas.alpha_composite(bloom)
 
 
 def draw_shadowed_circle(canvas, xy, r, fill):
@@ -374,6 +418,7 @@ def render_frame(scene_idx: int, frame_idx: int):
     draw = ImageDraw.Draw(canvas, "RGBA")
     draw_title(draw, scene_idx + 1, SCENES[scene_idx]["title"])
     SCENE_DRAWERS[scene_idx](canvas, draw, progress)
+    add_realistic_grade(canvas, scene_idx, progress)
     draw_subtitle(draw, SCENES[scene_idx]["subtitle"])
     canvas.alpha_composite(VIGNETTE)
     fade = 1.0
@@ -387,7 +432,7 @@ def render_frame(scene_idx: int, frame_idx: int):
     return canvas.convert("RGB")
 
 
-def encode_video(frame_dir: Path):
+def encode_video(frame_dir: Path, silent_video: Path):
     cmd = [
         "ffmpeg",
         "-y",
@@ -401,6 +446,63 @@ def encode_video(frame_dir: Path):
         "yuv420p",
         "-movflags",
         "+faststart",
+        str(silent_video),
+    ]
+    subprocess.run(cmd, check=True)
+
+
+async def synthesize_voice(text: str, output_path: Path):
+    communicate = edge_tts.Communicate(text=text, voice=VOICE_NAME, rate=VOICE_RATE)
+    await communicate.save(str(output_path))
+
+
+def generate_bgm(duration_sec: float, output_path: Path):
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency=196:duration={duration_sec}:sample_rate=44100",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency=294:duration={duration_sec}:sample_rate=44100",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency=392:duration={duration_sec}:sample_rate=44100",
+        "-filter_complex",
+        "[0:a]volume=0.05[a0];[1:a]volume=0.035[a1];[2:a]volume=0.025[a2];"
+        "[a0][a1][a2]amix=inputs=3,lowpass=f=1800,afade=t=in:st=0:d=1.5,afade=t=out:st="
+        f"{max(0.0, duration_sec - 2.0)}:d=2.0",
+        str(output_path),
+    ]
+    subprocess.run(cmd, check=True)
+
+
+def mux_audio_video(silent_video: Path, voice_audio: Path, bgm_audio: Path):
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(silent_video),
+        "-i",
+        str(voice_audio),
+        "-i",
+        str(bgm_audio),
+        "-filter_complex",
+        "[1:a]volume=1.15[voice];[2:a]volume=0.55[bgm];"
+        "[bgm][voice]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+        "-map",
+        "0:v:0",
+        "-map",
+        "[aout]",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-shortest",
         str(OUTPUT_VIDEO),
     ]
     subprocess.run(cmd, check=True)
@@ -411,6 +513,9 @@ def main():
     temp_root = Path(tempfile.mkdtemp(prefix="alcohol_gene_video_"))
     try:
         frame_dir = temp_root / "frames"
+        silent_video = temp_root / "silent_video.mp4"
+        voice_audio = temp_root / "voice_cn.mp3"
+        bgm_audio = temp_root / "bgm.wav"
         frame_dir.mkdir(parents=True, exist_ok=True)
         for scene_idx in range(TOTAL_SCENES):
             print(f"Rendering scene {scene_idx + 1}/{TOTAL_SCENES}...", flush=True)
@@ -420,7 +525,12 @@ def main():
                 out = frame_dir / f"frame_{absolute_idx:04d}.png"
                 image.save(out, quality=95)
         shutil.copy(frame_dir / f"frame_{(TOTAL_SCENES * FRAMES_PER_SCENE) - 1:04d}.png", OUTPUT_POSTER)
-        encode_video(frame_dir)
+        encode_video(frame_dir, silent_video)
+        narration = " ".join(NARRATION_LINES)
+        asyncio.run(synthesize_voice(narration, voice_audio))
+        total_duration = TOTAL_SCENES * SCENE_SECONDS
+        generate_bgm(total_duration, bgm_audio)
+        mux_audio_video(silent_video, voice_audio, bgm_audio)
         print(f"Video written to {OUTPUT_VIDEO}")
         print(f"Poster written to {OUTPUT_POSTER}")
     finally:
