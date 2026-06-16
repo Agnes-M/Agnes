@@ -14,9 +14,9 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 WIDTH = 1280
 HEIGHT = 720
 FPS = 20
-SCENE_SECONDS = 4
+SCENE_PAD_SECONDS = 0.35
+MIN_SCENE_SECONDS = 3.0
 TOTAL_SCENES = 6
-FRAMES_PER_SCENE = FPS * SCENE_SECONDS
 ARTIFACT_DIR = Path("/opt/cursor/artifacts")
 OUTPUT_VIDEO = ARTIFACT_DIR / "alcohol_gene_3d_realistic_cn_voice_bgm.mp4"
 OUTPUT_POSTER = ARTIFACT_DIR / "alcohol_gene_3d_realistic_poster.png"
@@ -38,37 +38,28 @@ DARK = (7, 18, 39)
 SCENES = [
     {
         "title": "酒精反应差异",
-        "subtitle": "为什么同样喝一杯，有人面不改色，有人很快脸红头晕？",
+        "narration": "很多人都有这样的经历，同样喝一杯酒，有人面不改色，有人却很快脸红头晕。",
     },
     {
         "title": "酒精代谢通路",
-        "subtitle": "乙醇先转化为有毒乙醛，再由 ALDH2 进一步分解为较无害的乙酸。",
+        "narration": "酒精进入体内后，先由 ADH 将乙醇转化为乙醛，再由 ALDH2 把乙醛继续分解为乙酸。",
     },
     {
         "title": "三种基因型",
-        "subtitle": "正常型、杂合突变、纯合突变，对乙醛的处理能力差异明显。",
+        "narration": "根据 ALDH2 基因检测，可分为正常型、杂合突变和纯合突变三种类型，代谢能力差异明显。",
     },
     {
         "title": "检测流程",
-        "subtitle": "咨询、采样、检测、报告，通常 5 到 7 个工作日获得结果。",
+        "narration": "检测流程包括咨询、采样、实验检测和报告解读，通常五到七个工作日可获得结果。",
     },
     {
         "title": "临床意义",
-        "subtitle": "知道代谢类型，不只是敢不敢喝酒，更关系到长期健康风险管理。",
+        "narration": "了解代谢类型，不只是敢不敢喝酒，更关系到长期健康风险管理。",
     },
     {
         "title": "行动建议",
-        "subtitle": "了解自己的基因，让健康选择更有依据。一次检测，长期参考。",
+        "narration": "了解自己的基因，让健康选择更有依据。一次检测，长期参考。",
     },
-]
-
-NARRATION_LINES = [
-    "很多人都有这样的经历，同样喝一杯酒，反应却完全不同。",
-    "酒精进入体内后，先由 ADH 转化为乙醛，再由 ALDH2 继续分解。",
-    "根据 ALDH2 基因检测结果，可分为正常型、杂合突变和纯合突变三类。",
-    "检测流程通常包括咨询、采样、实验检测与报告解读，五到七个工作日可出结果。",
-    "了解代谢类型，不只是能不能喝酒，更关系到长期健康风险管理。",
-    "了解自己的基因，让健康选择更有依据。一次检测，长期参考。",
 ]
 
 
@@ -412,14 +403,14 @@ def scene_six(canvas, draw, t):
 SCENE_DRAWERS = [scene_one, scene_two, scene_three, scene_four, scene_five, scene_six]
 
 
-def render_frame(scene_idx: int, frame_idx: int):
-    progress = frame_idx / FRAMES_PER_SCENE
+def render_frame(scene_idx: int, frame_idx: int, frames_per_scene: int):
+    progress = frame_idx / max(1, frames_per_scene - 1) if frames_per_scene > 1 else 1.0
     canvas = BASE_BG.copy()
     draw = ImageDraw.Draw(canvas, "RGBA")
     draw_title(draw, scene_idx + 1, SCENES[scene_idx]["title"])
     SCENE_DRAWERS[scene_idx](canvas, draw, progress)
     add_realistic_grade(canvas, scene_idx, progress)
-    draw_subtitle(draw, SCENES[scene_idx]["subtitle"])
+    draw_subtitle(draw, SCENES[scene_idx]["narration"])
     canvas.alpha_composite(VIGNETTE)
     fade = 1.0
     if progress < 0.12:
@@ -439,7 +430,7 @@ def encode_video(frame_dir: Path, silent_video: Path):
         "-framerate",
         str(FPS),
         "-i",
-        str(frame_dir / "frame_%04d.png"),
+        str(frame_dir / "frame_%05d.png"),
         "-c:v",
         "libx264",
         "-pix_fmt",
@@ -451,9 +442,59 @@ def encode_video(frame_dir: Path, silent_video: Path):
     subprocess.run(cmd, check=True)
 
 
-async def synthesize_voice(text: str, output_path: Path):
-    communicate = edge_tts.Communicate(text=text, voice=VOICE_NAME, rate=VOICE_RATE)
-    await communicate.save(str(output_path))
+def probe_duration(path: Path) -> float:
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return float(result.stdout.strip())
+
+
+async def synthesize_scene_voices(temp_root: Path) -> list[dict]:
+    scene_audio = []
+    for idx, scene in enumerate(SCENES):
+        audio_path = temp_root / f"voice_scene_{idx + 1:02d}.mp3"
+        communicate = edge_tts.Communicate(text=scene["narration"], voice=VOICE_NAME, rate=VOICE_RATE)
+        await communicate.save(str(audio_path))
+        voice_duration = probe_duration(audio_path)
+        scene_seconds = max(MIN_SCENE_SECONDS, voice_duration + SCENE_PAD_SECONDS)
+        scene_audio.append(
+            {
+                "path": audio_path,
+                "voice_duration": voice_duration,
+                "scene_seconds": scene_seconds,
+                "frames": max(1, int(round(scene_seconds * FPS))),
+            }
+        )
+        print(
+            f"Scene {idx + 1} voice: {voice_duration:.2f}s -> video: {scene_seconds:.2f}s",
+            flush=True,
+        )
+    return scene_audio
+
+
+def concat_voice_tracks(scene_audio: list[dict], output_path: Path):
+    inputs = []
+    chains = []
+    for idx, item in enumerate(scene_audio):
+        inputs.extend(["-i", str(item["path"])])
+        pad = max(0.0, item["scene_seconds"] - item["voice_duration"])
+        chains.append(f"[{idx}:a]apad=pad_dur={pad:.3f}[a{idx}]")
+    concat_inputs = "".join(f"[a{idx}]" for idx in range(len(scene_audio)))
+    filter_graph = ";".join(chains) + f";{concat_inputs}concat=n={len(scene_audio)}:v=0:a=1[aout]"
+    cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", filter_graph, "-map", "[aout]", str(output_path)]
+    subprocess.run(cmd, check=True)
 
 
 def generate_bgm(duration_sec: float, output_path: Path):
@@ -502,7 +543,6 @@ def mux_audio_video(silent_video: Path, voice_audio: Path, bgm_audio: Path):
         "copy",
         "-c:a",
         "aac",
-        "-shortest",
         str(OUTPUT_VIDEO),
     ]
     subprocess.run(cmd, check=True)
@@ -517,18 +557,23 @@ def main():
         voice_audio = temp_root / "voice_cn.mp3"
         bgm_audio = temp_root / "bgm.wav"
         frame_dir.mkdir(parents=True, exist_ok=True)
-        for scene_idx in range(TOTAL_SCENES):
-            print(f"Rendering scene {scene_idx + 1}/{TOTAL_SCENES}...", flush=True)
-            for frame_idx in range(FRAMES_PER_SCENE):
-                image = render_frame(scene_idx, frame_idx)
-                absolute_idx = scene_idx * FRAMES_PER_SCENE + frame_idx
-                out = frame_dir / f"frame_{absolute_idx:04d}.png"
+        scene_audio = asyncio.run(synthesize_scene_voices(temp_root))
+        total_frames = 0
+        for scene_idx, timing in enumerate(scene_audio):
+            frames_per_scene = timing["frames"]
+            print(
+                f"Rendering scene {scene_idx + 1}/{TOTAL_SCENES} ({frames_per_scene} frames)...",
+                flush=True,
+            )
+            for frame_idx in range(frames_per_scene):
+                image = render_frame(scene_idx, frame_idx, frames_per_scene)
+                out = frame_dir / f"frame_{total_frames:05d}.png"
                 image.save(out, quality=95)
-        shutil.copy(frame_dir / f"frame_{(TOTAL_SCENES * FRAMES_PER_SCENE) - 1:04d}.png", OUTPUT_POSTER)
+                total_frames += 1
+        shutil.copy(frame_dir / f"frame_{total_frames - 1:05d}.png", OUTPUT_POSTER)
         encode_video(frame_dir, silent_video)
-        narration = " ".join(NARRATION_LINES)
-        asyncio.run(synthesize_voice(narration, voice_audio))
-        total_duration = TOTAL_SCENES * SCENE_SECONDS
+        concat_voice_tracks(scene_audio, voice_audio)
+        total_duration = probe_duration(silent_video)
         generate_bgm(total_duration, bgm_audio)
         mux_audio_video(silent_video, voice_audio, bgm_audio)
         print(f"Video written to {OUTPUT_VIDEO}")
