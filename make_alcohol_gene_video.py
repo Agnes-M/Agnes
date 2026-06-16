@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
 import math
-import os
 import shutil
 import subprocess
 import tempfile
@@ -14,52 +13,60 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 WIDTH = 1280
 HEIGHT = 720
 FPS = 20
-SCENE_PAD_SECONDS = 0.35
-MIN_SCENE_SECONDS = 3.0
-TOTAL_SCENES = 6
+SCENE_PAD_SECONDS = 0.4
+MIN_SEGMENT_SECONDS = 2.5
 ARTIFACT_DIR = Path("/opt/cursor/artifacts")
 OUTPUT_VIDEO = ARTIFACT_DIR / "alcohol_gene_3d_realistic_cn_voice_bgm.mp4"
 OUTPUT_POSTER = ARTIFACT_DIR / "alcohol_gene_3d_realistic_poster.png"
 FONT_PATH = "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"
 VOICE_NAME = "zh-CN-XiaoxiaoNeural"
-VOICE_RATE = "+18%"
+VOICE_RATE = "+12%"
 
 BG_TOP = (9, 22, 52)
 BG_BOTTOM = (28, 88, 149)
 ACCENT = (66, 192, 255)
 ACCENT_2 = (120, 246, 224)
 WARM = (255, 110, 120)
-PANEL = (241, 247, 255)
 TEXT = (245, 250, 255)
 SUBTEXT = (196, 221, 244)
 DARK = (7, 18, 39)
 
+SCENE_TITLES = {
+    1: "开场引入",
+    2: "酒精代谢通路",
+    3: "三种基因型",
+    4: "医院检测流程",
+    5: "临床意义与获益",
+    6: "结尾行动引导",
+}
 
-SCENES = [
-    {
-        "title": "酒精反应差异",
-        "narration": "很多人都有这样的经历，同样喝一杯酒，有人面不改色，有人却很快脸红头晕。",
-    },
-    {
-        "title": "酒精代谢通路",
-        "narration": "酒精进入体内后，先由 ADH 将乙醇转化为乙醛，再由 ALDH2 把乙醛继续分解为乙酸。",
-    },
-    {
-        "title": "三种基因型",
-        "narration": "根据 ALDH2 基因检测，可分为正常型、杂合突变和纯合突变三种类型，代谢能力差异明显。",
-    },
-    {
-        "title": "检测流程",
-        "narration": "检测流程包括咨询、采样、实验检测和报告解读，通常五到七个工作日可获得结果。",
-    },
-    {
-        "title": "临床意义",
-        "narration": "了解代谢类型，不只是敢不敢喝酒，更关系到长期健康风险管理。",
-    },
-    {
-        "title": "行动建议",
-        "narration": "了解自己的基因，让健康选择更有依据。一次检测，长期参考。",
-    },
+# 完全按 PDF 脚本拆分的旁白分段；每段独立配音并与画面同步。
+SEGMENTS = [
+    # 场景一 · 开场引入（约 15 秒）
+    {"scene": 1, "phase": 0, "overlay": "为什么同样喝一杯，有人面不改色，有人却醉倒？", "narration": "为什么同样喝一杯，有人面不改色，有人却醉倒？"},
+    {"scene": 1, "phase": 1, "overlay": "脸红 · 心跳加速 · 不适反应", "narration": "在中国，超过三分之一的人在饮酒后会脸红、心跳加速甚至不适反应。"},
+    {"scene": 1, "phase": 2, "overlay": "秘密：你的基因", "narration": "这背后，隐藏着一个你可能从未关注过的秘密——你的基因。"},
+    # 场景二 · 酒精代谢通路（约 35 秒）
+    {"scene": 2, "phase": 0, "overlay": "酒精 → 胃肠道吸收 → 肝脏", "narration": "酒精进入身体后，由肝脏中的两种酶来处理。"},
+    {"scene": 2, "phase": 1, "overlay": "乙醇 —(ADH)→ 乙醛（有毒）", "narration": "第一步，ADH 将乙醇转化为乙醛，乙醛是一种有毒物质，会引起脸红、恶心等症状。"},
+    {"scene": 2, "phase": 2, "overlay": "乙醛 —(ALDH2)→ 乙酸（无害）", "narration": "第二步，ALDH2 酶再将乙醛分解为无害的乙酸。"},
+    {"scene": 2, "phase": 3, "overlay": "ALDH2 基因突变 → 乙醛蓄积", "narration": "问题在于，ALDH2 基因存在突变。如果你携带突变型，乙醛就会在体内积聚，让你对酒精格外敏感。"},
+    # 场景三 · 基因分型解读（约 25 秒）
+    {"scene": 3, "phase": 0, "overlay": "ALDH2 基因检测 · 三种类型", "narration": "根据 ALDH2 基因检测，每个人可分为三种类型。"},
+    {"scene": 3, "phase": 1, "overlay": "正常型（*1/*1）· 代谢顺畅", "narration": "正常型可以相对正常饮酒；"},
+    {"scene": 3, "phase": 2, "overlay": "杂合突变（*1/*2）· 中等风险", "narration": "杂合突变携带者酶活性下降，风险升高；"},
+    {"scene": 3, "phase": 3, "overlay": "纯合突变（*2/*2）· 高风险", "narration": "而纯合突变者几乎失去代谢乙醛的能力，与食道癌、胃癌等风险显著相关。"},
+    # 场景四 · 检测流程（约 25 秒）
+    {"scene": 4, "phase": 0, "overlay": "流程简单 · 无创", "narration": "在我们医院，酒精代谢基因检测流程简单、无创。"},
+    {"scene": 4, "phase": 1, "overlay": "咨询 → 采样 → 检测 → 报告", "narration": "您只需挂号、采集少量样本，五到七个工作日后，即可获得一份详细的基因报告。"},
+    {"scene": 4, "phase": 2, "overlay": "专业医生解读 · 个性化建议", "narration": "专业医生将为您解读结果，并制定个性化的饮酒风险管理建议。"},
+    # 场景五 · 临床意义（约 10 秒）
+    {"scene": 5, "phase": 0, "overlay": "代谢类型 = 健康管理", "narration": "知道自己的代谢类型，不仅仅是为了敢不敢喝酒，更是对自己健康的负责。"},
+    {"scene": 5, "phase": 1, "overlay": "食道癌风险可增加 50 倍以上", "narration": "研究表明，ALDH2 突变携带者长期饮酒后，食道癌风险可增加五十倍以上。"},
+    {"scene": 5, "phase": 2, "overlay": "早知道 · 早预防", "narration": "早知道，早预防。"},
+    # 场景六 · 结尾号召（约 10 秒）
+    {"scene": 6, "phase": 0, "overlay": "一次检测 · 终身参考", "narration": "了解自己的基因，让健康选择有据可依。扫描二维码或拨打电话，预约 XX 医院基因检测门诊，一次检测，终身参考。"},
+    {"scene": 6, "phase": 1, "overlay": "健康科普免责声明", "narration": "本视频仅供健康科普，具体诊疗请遵医嘱。"},
 ]
 
 
@@ -85,6 +92,7 @@ SUBTITLE_FONT = load_font(22)
 LABEL_FONT = load_font(20)
 SMALL_FONT = load_font(16)
 BIG_FONT = load_font(28)
+HOOK_FONT = load_font(32)
 
 
 def make_gradient():
@@ -95,8 +103,7 @@ def make_gradient():
         row = blend(BG_TOP, BG_BOTTOM, vertical)
         for x in range(WIDTH):
             radial = min(1.0, math.dist((x, y), (WIDTH * 0.75, HEIGHT * 0.25)) / 1000)
-            glow = blend((48, 146, 255), row, radial)
-            px[x, y] = glow
+            px[x, y] = blend((48, 146, 255), row, radial)
     return base
 
 
@@ -106,19 +113,13 @@ _vdraw = ImageDraw.Draw(VIGNETTE)
 _vdraw.rectangle((0, 0, WIDTH, HEIGHT), fill=(0, 0, 0, 28))
 VIGNETTE = VIGNETTE.filter(ImageFilter.GaussianBlur(24))
 
-
-def make_texture_overlay():
-    layer = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
-    px = layer.load()
-    for y in range(HEIGHT):
-        for x in range(WIDTH):
-            val = ((x * 31 + y * 17 + (x // 9) * 13) % 100) / 100.0
-            alpha = int(10 + val * 16)
-            px[x, y] = (220, 230, 245, alpha)
-    return layer.filter(ImageFilter.GaussianBlur(0.6))
-
-
-TEXTURE_OVERLAY = make_texture_overlay()
+TEXTURE_OVERLAY = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+_tpx = TEXTURE_OVERLAY.load()
+for _y in range(HEIGHT):
+    for _x in range(WIDTH):
+        val = ((_x * 31 + _y * 17 + (_x // 9) * 13) % 100) / 100.0
+        _tpx[_x, _y] = (220, 230, 245, int(10 + val * 16))
+TEXTURE_OVERLAY = TEXTURE_OVERLAY.filter(ImageFilter.GaussianBlur(0.6))
 
 
 def add_glow(canvas, center, radius, color, alpha):
@@ -134,17 +135,10 @@ def draw_rounded_panel(draw, box, fill, outline=None, radius=28):
     draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=2 if outline else 1)
 
 
-def draw_title(draw, scene_no, title):
-    draw.text((72, 48), f"酒精代谢基因科普样片  |  场景 {scene_no}", font=LABEL_FONT, fill=SUBTEXT)
-    draw.text((72, 86), title, font=TITLE_FONT, fill=TEXT)
-
-
 def wrap_text(text, max_width, font):
-    words = list(text)
-    lines = []
-    current = ""
+    lines, current = [], ""
     dummy = ImageDraw.Draw(Image.new("RGB", (10, 10)))
-    for ch in words:
+    for ch in text:
         trial = current + ch
         if dummy.textlength(trial, font=font) <= max_width:
             current = trial
@@ -157,31 +151,38 @@ def wrap_text(text, max_width, font):
     return lines
 
 
-def draw_subtitle(draw, text):
+def draw_header(draw, scene_no: int, overlay: str):
+    draw.text((72, 48), f"酒精代谢基因检测科普  |  场景 {scene_no} · {SCENE_TITLES[scene_no]}", font=LABEL_FONT, fill=SUBTEXT)
+    draw.text((72, 86), overlay, font=TITLE_FONT, fill=TEXT)
+
+
+def draw_subtitle(draw, text: str):
     lines = wrap_text(text, WIDTH - 220, SUBTITLE_FONT)
     line_height = 38
     box_h = 46 + line_height * len(lines)
     y0 = HEIGHT - box_h - 40
-    draw.rounded_rectangle((64, y0, WIDTH - 64, HEIGHT - 40), radius=26, fill=(5, 15, 32, 190))
+    draw.rounded_rectangle((64, y0, WIDTH - 64, HEIGHT - 40), radius=26, fill=(5, 15, 32, 200))
     for idx, line in enumerate(lines):
         draw.text((96, y0 + 20 + idx * line_height), line, font=SUBTITLE_FONT, fill=TEXT)
 
 
-def add_realistic_grade(canvas, scene_idx: int, progress: float):
-    # Subtle scene-dependent color grading and specular bloom.
-    tint_palette = [(16, 40, 78), (10, 50, 72), (26, 46, 62), (18, 54, 78), (26, 42, 70), (20, 60, 84)]
-    tint = tint_palette[scene_idx % len(tint_palette)]
-    grade = Image.new("RGBA", (WIDTH, HEIGHT), tint + (20,))
-    canvas.alpha_composite(grade)
-    canvas.alpha_composite(TEXTURE_OVERLAY)
+def draw_center_hook(draw, text: str, y: int = 168):
+    lines = wrap_text(text, WIDTH - 280, HOOK_FONT)
+    for idx, line in enumerate(lines):
+        tw = draw.textlength(line, font=HOOK_FONT)
+        draw.rounded_rectangle((WIDTH / 2 - tw / 2 - 24, y + idx * 46 - 8, WIDTH / 2 + tw / 2 + 24, y + idx * 46 + 40), radius=18, fill=(8, 20, 42, 150))
+        draw.text((WIDTH / 2 - tw / 2, y + idx * 46), line, font=HOOK_FONT, fill=TEXT)
 
+
+def add_realistic_grade(canvas, scene_idx: int, progress: float):
+    tint_palette = [(16, 40, 78), (10, 50, 72), (26, 46, 62), (18, 54, 78), (26, 42, 70), (20, 60, 84)]
+    canvas.alpha_composite(Image.new("RGBA", (WIDTH, HEIGHT), tint_palette[scene_idx] + (22,)))
+    canvas.alpha_composite(TEXTURE_OVERLAY)
     bloom = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     bdraw = ImageDraw.Draw(bloom)
     cx = int(lerp(WIDTH * 0.2, WIDTH * 0.85, (progress + scene_idx * 0.11) % 1))
-    cy = int(HEIGHT * 0.22)
-    bdraw.ellipse((cx - 180, cy - 90, cx + 180, cy + 90), fill=(255, 255, 255, 24))
-    bloom = bloom.filter(ImageFilter.GaussianBlur(22))
-    canvas.alpha_composite(bloom)
+    bdraw.ellipse((cx - 180, 130, cx + 180, 220), fill=(255, 255, 255, 26))
+    canvas.alpha_composite(bloom.filter(ImageFilter.GaussianBlur(22)))
 
 
 def draw_shadowed_circle(canvas, xy, r, fill):
@@ -189,254 +190,244 @@ def draw_shadowed_circle(canvas, xy, r, fill):
     d = ImageDraw.Draw(layer)
     x, y = xy
     d.ellipse((x - r, y - r + 10, x + r, y + r + 10), fill=(0, 0, 0, 70))
-    layer = layer.filter(ImageFilter.GaussianBlur(12))
-    canvas.alpha_composite(layer)
-    d = ImageDraw.Draw(canvas)
-    d.ellipse((x - r, y - r, x + r, y + r), fill=fill)
+    canvas.alpha_composite(layer.filter(ImageFilter.GaussianBlur(12)))
+    ImageDraw.Draw(canvas).ellipse((x - r, y - r, x + r, y + r), fill=fill)
 
 
-def scene_one(canvas, draw, t):
-    add_glow(canvas, (380, 320), 220, WARM, 80)
-    add_glow(canvas, (920, 260), 260, ACCENT, 80)
-    table_y = 520
-    draw.ellipse((100, table_y - 55, 1180, table_y + 55), fill=(15, 35, 65, 220))
-    clink = math.sin(t * math.pi) * 22
-    for offset, sign in [(-80, -1), (80, 1)]:
-        cx = 470 + offset + sign * clink
-        top = 292 - sign * clink * 0.2
-        bowl = [(cx - 46, top), (cx + 46, top + 10), (cx + 32, top + 104), (cx - 32, top + 104)]
-        draw.polygon(bowl, fill=(240, 247, 255, 130))
-        draw.rectangle((cx - 5, top + 104, cx + 5, top + 210), fill=(220, 236, 252, 180))
-        draw.ellipse((cx - 38, top + 42, cx + 38, top + 106), fill=(145, 20, 45, 220))
-        draw.ellipse((cx - 24, top + 206, cx + 24, top + 222), fill=(220, 236, 252, 200))
-    calm_x = 910
-    flush_x = 1080
-    for x, is_flush in [(calm_x, False), (flush_x, True)]:
-        draw_shadowed_circle(canvas, (x, 340), 68, (247, 218, 198, 255))
-        draw.rounded_rectangle((x - 52, 405, x + 52, 535), radius=34, fill=(234, 241, 255, 255))
-        eye_y = 332
-        draw.ellipse((x - 24, eye_y, x - 8, eye_y + 12), fill=DARK)
-        draw.ellipse((x + 8, eye_y, x + 24, eye_y + 12), fill=DARK)
-        draw.arc((x - 18, 354, x + 18, 376), 0, 180, fill=DARK, width=3)
-        if is_flush:
-            pulse = int(70 + 50 * math.sin(t * math.pi * 4))
-            draw.ellipse((x - 44, 356, x - 16, 384), fill=(255, 120, 132, pulse))
-            draw.ellipse((x + 16, 356, x + 44, 384), fill=(255, 120, 132, pulse))
-            draw.arc((x + 66, 288, x + 102, 324), 40, 260, fill=TEXT, width=4)
-
-
-def scene_two(canvas, draw, t):
-    add_glow(canvas, (380, 360), 240, ACCENT_2, 90)
-    add_glow(canvas, (980, 320), 200, WARM, 70)
-    body = [(320, 180), (380, 160), (440, 180), (474, 250), (452, 390), (430, 540), (330, 540), (308, 390), (286, 250)]
-    draw.polygon(body, fill=(225, 239, 255, 60), outline=(210, 235, 255, 180))
-    draw.ellipse((324, 118, 436, 232), fill=(230, 242, 255, 70), outline=(210, 235, 255, 180), width=3)
-    draw.rounded_rectangle((318, 272, 425, 360), radius=34, fill=(170, 78, 72, 220))
-    path_points = [(250, 198), (280, 260), (305, 330), (330, 302), (365, 316)]
-    for i, p in enumerate(path_points[: max(2, int(2 + t * (len(path_points) - 1)))]):
-        r = 14 if i % 2 == 0 else 10
-        draw.ellipse((p[0] - r, p[1] - r, p[0] + r, p[1] + r), fill=(109, 232, 255, 220))
-    draw.text((210, 150), "酒精进入体内", font=LABEL_FONT, fill=TEXT)
-    panel = (600, 190, 1180, 495)
-    draw_rounded_panel(draw, panel, (235, 246, 255, 225), outline=(170, 215, 255))
-    x1, x2, x3 = 690, 890, 1090
-    y = 320
-    for x, color, label in [(x1, (78, 180, 255), "乙醇"), (x2, (255, 122, 94), "乙醛"), (x3, (118, 232, 182), "乙酸")]:
-        draw.ellipse((x - 50, y - 50, x + 50, y + 50), fill=color)
-        draw.text((x - 30, y + 76), label, font=LABEL_FONT, fill=DARK)
-    draw.line((x1 + 58, y, x2 - 58, y), fill=(64, 120, 180), width=8)
-    draw.line((x2 + 58, y, x3 - 58, y), fill=(64, 120, 180), width=8)
-    arrow = int(lerp(x1 + 58, x2 - 58, ease((t * 1.8) % 1)))
-    draw.ellipse((arrow - 12, y - 12, arrow + 12, y + 12), fill=WARM)
-    draw.text((730, 230), "ADH", font=BIG_FONT, fill=(26, 92, 154))
-    draw.text((928, 230), "ALDH2", font=BIG_FONT, fill=(26, 92, 154))
-    if t > 0.58:
-        warn_alpha = int(lerp(0, 210, ease((t - 0.58) / 0.42)))
-        draw.rounded_rectangle((782, 380, 1000, 444), radius=18, fill=(255, 110, 120, warn_alpha))
-        draw.text((822, 396), "乙醛蓄积风险", font=LABEL_FONT, fill=TEXT)
-
-
-def draw_dna(draw, center, scale, color):
-    cx, cy = center
-    points_left = []
-    points_right = []
-    for i in range(16):
-        y = cy - 90 * scale + i * 12 * scale
-        x_offset = math.sin(i / 2) * 20 * scale
-        points_left.append((cx - 20 * scale + x_offset, y))
-        points_right.append((cx + 20 * scale - x_offset, y))
-    draw.line(points_left, fill=color, width=max(2, int(5 * scale)))
-    draw.line(points_right, fill=color, width=max(2, int(5 * scale)))
-    for left, right in zip(points_left[::2], points_right[::2]):
-        draw.line((left, right), fill=(255, 255, 255), width=max(1, int(2 * scale)))
-
-
-def scene_three(canvas, draw, t):
-    add_glow(canvas, (230, 300), 200, ACCENT, 60)
-    add_glow(canvas, (1040, 280), 220, WARM, 70)
-    cards = [
-        (190, "正常型", "风险较低", (73, 208, 154)),
-        (520, "杂合突变", "中等风险", (255, 196, 84)),
-        (850, "纯合突变", "高风险", (255, 110, 120)),
-    ]
-    for idx, (x, title, risk, color) in enumerate(cards):
-        rise = (1 - ease(min(1.0, max(0.0, t * 1.5 - idx * 0.18)))) * 80
-        box = (x, 180 + rise, x + 240, 510 + rise)
-        draw_rounded_panel(draw, box, (244, 249, 255, 225), outline=color)
-        draw.rounded_rectangle((x + 22, 205 + rise, x + 218, 252 + rise), radius=20, fill=color)
-        draw.text((x + 52, 214 + rise), title, font=LABEL_FONT, fill=DARK)
-        draw_dna(draw, (x + 120, 340 + rise), 1.1, color)
-        bars = [0.9, 0.55, 0.12][idx]
-        draw.text((x + 58, 415 + rise), "乙醛代谢能力", font=SMALL_FONT, fill=(45, 70, 100))
-        draw.rounded_rectangle((x + 52, 446 + rise, x + 188, 468 + rise), radius=10, fill=(208, 223, 238))
-        draw.rounded_rectangle((x + 52, 446 + rise, x + 52 + 136 * bars, 468 + rise), radius=10, fill=color)
-        draw.text((x + 84, 484 + rise), risk, font=LABEL_FONT, fill=DARK)
-
-
-def draw_person(draw, x, y, coat=False):
+def draw_person(draw, x, y, coat=False, flush=False):
     skin = (247, 218, 198)
     draw.ellipse((x - 20, y - 60, x + 20, y - 20), fill=skin)
     fill = (240, 246, 255) if coat else (129, 204, 255)
     draw.rounded_rectangle((x - 26, y - 20, x + 26, y + 46), radius=18, fill=fill)
+    draw.ellipse((x - 16, y - 52, x - 4, y - 40), fill=DARK)
+    draw.ellipse((x + 4, y - 52, x + 16, y - 40), fill=DARK)
+    if flush:
+        draw.ellipse((x - 38, y - 38, x - 10, y - 10), fill=(255, 120, 132, 180))
+        draw.ellipse((x + 10, y - 38, x + 38, y - 10), fill=(255, 120, 132, 180))
 
 
-def scene_four(canvas, draw, t):
-    labels = ["咨询", "采样", "检测", "报告"]
-    xs = [220, 460, 740, 1020]
-    draw.line((220, 500, 1020, 500), fill=(184, 213, 240), width=8)
-    active_x = lerp(xs[0], xs[-1], ease(t))
-    draw.line((220, 500, active_x, 500), fill=ACCENT_2, width=8)
-    for idx, (label, x) in enumerate(zip(labels, xs)):
-        completed = t >= idx / 3 if idx < 3 else t > 0.88
-        color = (90, 226, 196) if completed else (224, 235, 246)
-        draw.ellipse((x - 34, 466, x + 34, 534), fill=color, outline=(255, 255, 255), width=3)
-        draw.text((x - 24, 548), label, font=LABEL_FONT, fill=TEXT)
-    stages = [
-        ("挂号咨询", 120, 180),
-        ("样本采集", 400, 180),
-        ("实验检测", 680, 180),
-        ("报告解读", 960, 180),
+def draw_dna(draw, center, scale, color):
+    cx, cy = center
+    pl, pr = [], []
+    for i in range(16):
+        y = cy - 90 * scale + i * 12 * scale
+        xo = math.sin(i / 2) * 20 * scale
+        pl.append((cx - 20 * scale + xo, y))
+        pr.append((cx + 20 * scale - xo, y))
+    draw.line(pl, fill=color, width=max(2, int(5 * scale)))
+    draw.line(pr, fill=color, width=max(2, int(5 * scale)))
+    for l, r in zip(pl[::2], pr[::2]):
+        draw.line((l, r), fill=(255, 255, 255), width=max(1, int(2 * scale)))
+
+
+def scene_one(canvas, draw, t, phase):
+    add_glow(canvas, (420, 300), 220, WARM, 80)
+    table_y = 500
+    draw.ellipse((120, table_y - 45, 1160, table_y + 45), fill=(15, 35, 65, 220))
+    clink = math.sin(t * math.pi) * 18 if phase == 0 else 0
+    for offset, sign in [(-70, -1), (70, 1)]:
+        cx = 500 + offset + sign * clink
+        top = 300 - sign * clink * 0.15
+        draw.polygon([(cx - 40, top), (cx + 40, top + 8), (cx + 28, top + 92), (cx - 28, top + 92)], fill=(240, 247, 255, 140))
+        draw.rectangle((cx - 4, top + 92, cx + 4, top + 180), fill=(220, 236, 252, 180))
+        draw.ellipse((cx - 34, top + 38, cx + 34, top + 94), fill=(145, 20, 45, 220))
+    if phase == 0:
+        draw_person(draw, 920, 340, flush=False)
+        draw_person(draw, 1060, 340, flush=True)
+    elif phase == 1:
+        draw_person(draw, 980, 330, flush=True)
+        pulse = int(120 + 80 * math.sin(t * math.pi * 6))
+        draw.ellipse((900, 250, 940, 290), fill=(255, 90, 110, pulse))
+        draw.text((948, 258), "心跳加速", font=LABEL_FONT, fill=WARM)
+        for i in range(3):
+            draw.arc((880 + i * 36, 360, 920 + i * 36, 400), 200, 340, fill=WARM, width=4)
+    else:
+        draw_dna(draw, (640, 340), 2.2, ACCENT_2)
+        draw.text((560, 470), "你的基因", font=BIG_FONT, fill=TEXT)
+
+
+def scene_two(canvas, draw, t, phase):
+    add_glow(canvas, (360, 340), 220, ACCENT_2, 80)
+    body = [(300, 190), (360, 170), (420, 190), (450, 260), (430, 420), (330, 420), (310, 260)]
+    draw.polygon(body, fill=(225, 239, 255, 55), outline=(210, 235, 255, 160))
+    draw.ellipse((304, 130, 416, 242), fill=(230, 242, 255, 65), outline=(210, 235, 255, 160), width=2)
+    draw.rounded_rectangle((298, 270, 405, 350), radius=30, fill=(170, 78, 72, 210))
+    if phase == 0:
+        pts = [(220, 210), (250, 270), (280, 310), (310, 300)]
+        for i, p in enumerate(pts[: max(2, int(2 + t * (len(pts) - 1)))]):
+            draw.ellipse((p[0] - 12, p[1] - 12, p[0] + 12, p[1] + 12), fill=(109, 232, 255, 220))
+        draw.text((180, 160), "胃肠道吸收", font=LABEL_FONT, fill=TEXT)
+        draw.text((330, 360), "肝脏", font=BIG_FONT, fill=TEXT)
+    panel = (560, 180, 1180, 500)
+    draw_rounded_panel(draw, panel, (235, 246, 255, 225), outline=(170, 215, 255))
+    x1, x2, x3 = 660, 860, 1060
+    y = 310
+    molecules = [(x1, (78, 180, 255), "乙醇"), (x2, (255, 122, 94), "乙醛"), (x3, (118, 232, 182), "乙酸")]
+    if phase >= 1:
+        draw.ellipse((x1 - 48, y - 48, x1 + 48, y + 48), fill=molecules[0][1])
+        draw.text((x1 - 28, y + 64), "乙醇", font=LABEL_FONT, fill=DARK)
+    if phase >= 1:
+        prog = ease(t) if phase == 1 else 1.0
+        ax = int(lerp(x1 + 52, x2 - 52, prog))
+        draw.line((x1 + 52, y, ax, y), fill=(64, 120, 180), width=8)
+        draw.text((700, 220), "ADH / ADH1B", font=LABEL_FONT, fill=(26, 92, 154))
+        if phase == 1:
+            draw.ellipse((ax - 10, y - 10, ax + 10, y + 10), fill=WARM)
+    if phase >= 1:
+        draw.ellipse((x2 - 48, y - 48, x2 + 48, y + 48), fill=molecules[1][1])
+        draw.text((x2 - 28, y + 64), "乙醛（有毒）", font=LABEL_FONT, fill=DARK)
+    if phase >= 2:
+        prog = ease(t) if phase == 2 else 1.0
+        bx = int(lerp(x2 + 52, x3 - 52, prog))
+        draw.line((x2 + 52, y, bx, y), fill=(64, 120, 180), width=8)
+        draw.text((900, 220), "ALDH2", font=LABEL_FONT, fill=(26, 92, 154))
+    if phase >= 2:
+        draw.ellipse((x3 - 48, y - 48, x3 + 48, y + 48), fill=molecules[2][1])
+        draw.text((x3 - 28, y + 64), "乙酸（无害）", font=LABEL_FONT, fill=DARK)
+    if phase == 3:
+        draw.line((x2 - 60, y - 60, x2 + 60, y + 60), fill=WARM, width=6)
+        draw.line((x2 + 60, y - 60, x2 - 60, y + 60), fill=WARM, width=6)
+        for i in range(6):
+            ang = t * math.pi * 2 + i
+            px = x2 + int(math.cos(ang) * (40 + i * 8))
+            py = y + int(math.sin(ang) * (30 + i * 6))
+            draw.ellipse((px - 8, py - 8, px + 8, py + 8), fill=(255, 110, 120, 200))
+        draw.text((760, 400), "乙醛在体内积聚", font=LABEL_FONT, fill=WARM)
+
+
+def scene_three(canvas, draw, t, phase):
+    cards = [
+        (140, "正常型", "*1/*1", "ALDH2 活性正常，代谢顺畅，风险低", (73, 208, 154), 0.92),
+        (470, "杂合突变", "*1/*2", "酶活性下降，乙醛蓄积，中等风险", (255, 196, 84), 0.55),
+        (800, "纯合突变", "*2/*2", "几乎无酶活性，高风险", (255, 110, 120), 0.12),
     ]
-    for idx, (title, x, y) in enumerate(stages):
-        shift = (1 - ease(min(1.0, max(0.0, t * 1.4 - idx * 0.2)))) * 40
-        draw_rounded_panel(draw, (x, y + shift, x + 210, y + 170 + shift), (240, 247, 255, 220), outline=(160, 214, 255))
+    highlight = {0: 0, 1: 0, 2: 0, 3: 2}[phase] if phase > 0 else -1
+    for idx, (x, title, genotype, desc, color, bars) in enumerate(cards):
+        active = phase == 0 or idx == highlight
+        alpha = 255 if active else 120
+        rise = 0 if active else 30
+        box = (x, 170 + rise, x + 250, 520 + rise)
+        draw_rounded_panel(draw, box, (244, 249, 255, alpha), outline=color if active else (180, 190, 200))
+        draw.rounded_rectangle((x + 20, 195 + rise, x + 230, 245 + rise), radius=18, fill=color + (alpha,))
+        draw.text((x + 36, 204 + rise), title, font=LABEL_FONT, fill=DARK if active else (100, 110, 120))
+        draw.text((x + 36, 236 + rise), genotype, font=SMALL_FONT, fill=DARK if active else (120, 120, 120))
+        if active:
+            draw_dna(draw, (x + 125, 340 + rise), 1.0, color)
+            draw.rounded_rectangle((x + 40, 420 + rise, x + 210, 442 + rise), radius=10, fill=(208, 223, 238))
+            draw.rounded_rectangle((x + 40, 420 + rise, x + 40 + 170 * bars, 442 + rise), radius=10, fill=color)
+            for li, line in enumerate(wrap_text(desc, 200, SMALL_FONT)):
+                draw.text((x + 40, 452 + rise + li * 22), line, font=SMALL_FONT, fill=DARK)
+
+
+def scene_four(canvas, draw, t, phase):
+    steps = ["挂号咨询", "医生问诊", "样本采集", "实验检测", "报告解读"]
+    xs = [140, 320, 500, 680, 860]
+    if phase >= 1:
+        draw.line((140, 500, 1040, 500), fill=(184, 213, 240), width=8)
+        active_i = min(len(steps) - 1, int(t * len(steps) * (1.2 if phase == 1 else 1.5)))
+        active_x = xs[active_i]
+        draw.line((140, 500, active_x, 500), fill=ACCENT_2, width=8)
+        for i, (label, x) in enumerate(zip(["咨询", "采样", "检测", "报告"], [200, 500, 740, 980])):
+            done = i <= active_i // 1.2
+            col = (90, 226, 196) if done else (224, 235, 246)
+            draw.ellipse((x - 30, 470, x + 30, 530), fill=col, outline=(255, 255, 255), width=2)
+            draw.text((x - 22, 540), label, font=LABEL_FONT, fill=TEXT)
+    for idx, (title, x) in enumerate(zip(steps, xs)):
+        show = phase == 0 or (phase == 1 and idx <= int(t * 5)) or (phase == 2 and idx >= 3)
+        if not show:
+            continue
+        y = 180 if idx < 3 else 300
+        draw_rounded_panel(draw, (x, y, x + 170, y + 120), (240, 247, 255, 220), outline=(160, 214, 255))
         if idx == 0:
-            draw.rectangle((x + 32, y + 60 + shift, x + 82, y + 110 + shift), fill=(106, 180, 255))
-            draw.rectangle((x + 90, y + 46 + shift, x + 165, y + 124 + shift), fill=(223, 236, 249))
-            draw_person(draw, x + 160, y + 136 + shift)
+            draw.rectangle((x + 24, y + 36, x + 64, y + 76), fill=(106, 180, 255))
+            draw_person(draw, x + 120, y + 90)
         elif idx == 1:
-            draw_person(draw, x + 76, y + 128 + shift)
-            draw_person(draw, x + 148, y + 128 + shift, coat=True)
-            draw.line((x + 142, y + 92 + shift, x + 92, y + 76 + shift), fill=WARM, width=5)
+            draw_person(draw, x + 60, y + 90, coat=True)
+            draw_person(draw, x + 110, y + 90)
         elif idx == 2:
-            draw.rounded_rectangle((x + 42, y + 52 + shift, x + 168, y + 120 + shift), radius=18, fill=(71, 129, 201))
-            for lx in range(56, 160, 26):
-                draw.line((x + lx, y + 60 + shift, x + lx, y + 112 + shift), fill=(190, 230, 255), width=3)
+            draw.line((x + 70, y + 40, x + 40, y + 24), fill=WARM, width=4)
+            draw_person(draw, x + 85, y + 90)
+        elif idx == 3:
+            draw.rounded_rectangle((x + 30, y + 30, x + 140, y + 80), radius=14, fill=(71, 129, 201))
         else:
-            draw_person(draw, x + 64, y + 126 + shift, coat=True)
-            draw_person(draw, x + 146, y + 126 + shift)
-            draw.rectangle((x + 88, y + 54 + shift, x + 156, y + 108 + shift), fill=(255, 255, 255))
-        draw.text((x + 52, y + 128 + shift), title, font=LABEL_FONT, fill=DARK)
-    draw.text((520, 610), "通常 5-7 个工作日出报告", font=LABEL_FONT, fill=SUBTEXT)
+            draw_person(draw, x + 55, y + 90, coat=True)
+            draw.rectangle((x + 90, y + 30, x + 140, y + 70), fill=(255, 255, 255))
+        draw.text((x + 24, y + 92), title, font=SMALL_FONT, fill=DARK)
+    if phase >= 1:
+        draw.text((470, 600), "5–7 个工作日出报告", font=LABEL_FONT, fill=SUBTEXT)
 
 
-def scene_five(canvas, draw, t):
-    add_glow(canvas, (640, 310), 260, ACCENT, 85)
-    draw_person(draw, 640, 360, coat=True)
-    draw.rounded_rectangle((590, 328, 690, 468), radius=30, fill=(255, 255, 255))
-    draw.line((640, 360, 640, 438), fill=(84, 162, 255), width=6)
-    draw.line((610, 382, 670, 382), fill=(84, 162, 255), width=6)
+def scene_five(canvas, draw, t, phase):
+    add_glow(canvas, (640, 300), 240, ACCENT, 80)
+    if phase < 2:
+        draw_person(draw, 640, 350, coat=True)
     icons = [
-        ((360, 238), "肿瘤风险"),
-        ((920, 238), "手术评估"),
-        ((360, 390), "药物参考"),
-        ((920, 390), "家族筛查"),
+        ((300, 230), "消化道肿瘤\n风险预警"),
+        ((980, 230), "手术前酒精\n耐受评估"),
+        ((300, 420), "药物相互\n作用参考"),
+        ((980, 420), "家族遗传\n风险筛查"),
     ]
     for idx, ((x, y), label) in enumerate(icons):
-        pulse = 1 + 0.08 * math.sin(t * math.pi * 4 + idx)
-        r = int(66 * pulse)
-        draw.ellipse((x - r, y - r, x + r, y + r), fill=(241, 247, 255, 220), outline=(157, 214, 255), width=4)
-        if idx == 0:
-            draw.arc((x - 24, y - 34, x + 24, y + 24), 200, 340, fill=WARM, width=6)
-            draw.line((x, y + 6, x, y + 30), fill=WARM, width=6)
-        elif idx == 1:
-            draw.rectangle((x - 16, y - 24, x + 18, y + 26), outline=ACCENT, width=5)
-            draw.line((x + 18, y - 24, x + 36, y - 42), fill=ACCENT, width=5)
-        elif idx == 2:
-            draw.rounded_rectangle((x - 24, y - 14, x + 24, y + 14), radius=14, fill=(84, 162, 255))
-            draw.line((x - 8, y - 14, x - 8, y + 14), fill=TEXT, width=4)
-        else:
-            draw.line((x, y - 24, x, y + 22), fill=ACCENT_2, width=6)
-            draw.line((x - 18, y - 2, x + 18, y - 2), fill=ACCENT_2, width=6)
-        text_w = draw.textlength(label, font=LABEL_FONT)
-        label_y = y - 116 if idx < 2 else y + 100
-        draw.rounded_rectangle((x - text_w / 2 - 12, label_y - 8, x + text_w / 2 + 12, label_y + 30), radius=14, fill=(8, 20, 42, 120))
-        draw.text((x - text_w / 2, label_y), label, font=LABEL_FONT, fill=TEXT)
+        show = phase == 0 or (phase == 1 and idx <= int(t * 4))
+        if not show:
+            continue
+        r = 62
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(241, 247, 255, 220), outline=(157, 214, 255), width=3)
+        for li, line in enumerate(label.split("\n")):
+            tw = draw.textlength(line, font=SMALL_FONT)
+            draw.text((x - tw / 2, y - 10 + li * 20), line, font=SMALL_FONT, fill=DARK)
+    if phase == 1:
+        draw.rounded_rectangle((360, 160, 920, 230), radius=20, fill=(255, 110, 120, 210))
+        draw.text((400, 182), "食道癌风险可增加 50 倍以上", font=BIG_FONT, fill=TEXT)
+    if phase == 2:
+        draw.text((500, 300), "早知道，早预防", font=TITLE_FONT, fill=ACCENT_2)
 
 
-def scene_six(canvas, draw, t):
-    add_glow(canvas, (1020, 230), 200, ACCENT, 70)
-    add_glow(canvas, (300, 250), 180, ACCENT_2, 70)
-    draw.rectangle((136, 280, 430, 525), fill=(232, 242, 255))
-    for i in range(5):
-        bx = 176 + i * 46
-        draw.rectangle((bx, 320, bx + 24, 350), fill=(75, 137, 212))
-        draw.rectangle((bx, 374, bx + 24, 404), fill=(75, 137, 212))
-        draw.rectangle((bx, 428, bx + 24, 458), fill=(75, 137, 212))
-    draw.rectangle((232, 446, 334, 525), fill=(75, 137, 212))
-    draw_dna(draw, (520, 330), 1.8, ACCENT_2)
+def scene_six(canvas, draw, t, phase):
+    add_glow(canvas, (300, 260), 180, ACCENT_2, 70)
+    draw.rectangle((120, 270, 400, 510), fill=(232, 242, 255))
+    draw_dna(draw, (500, 320), 1.6, ACCENT_2)
     alpha = int(lerp(0, 255, ease(t)))
-    draw.rounded_rectangle((660, 180, 1150, 520), radius=34, fill=(239, 247, 255, alpha))
-    draw.text((712, 230), "了解自己的酒精代谢基因", font=BIG_FONT, fill=DARK)
-    draw.text((712, 284), "让健康选择有据可依", font=TITLE_FONT, fill=(23, 72, 123))
-    draw.text((712, 360), "XX医院 · 基因检测门诊", font=LABEL_FONT, fill=(37, 92, 152))
-    draw.text((712, 404), "预约咨询：400-800-1234", font=LABEL_FONT, fill=(37, 92, 152))
-    draw.rectangle((972, 336, 1082, 446), fill=(220, 232, 246), outline=(72, 132, 200), width=4)
+    draw.rounded_rectangle((620, 170, 1160, 530), radius=34, fill=(239, 247, 255, alpha))
+    draw.text((672, 210), "XX 医院 · 基因检测门诊", font=BIG_FONT, fill=DARK)
+    draw.text((672, 262), "让健康选择有据可依", font=TITLE_FONT, fill=(23, 72, 123))
+    draw.text((672, 320), "预约咨询：400-800-1234", font=LABEL_FONT, fill=(37, 92, 152))
+    draw.rectangle((940, 290, 1050, 400), fill=(220, 232, 246), outline=(72, 132, 200), width=4)
     for i in range(6):
-        draw.line((984, 348 + i * 16, 1070, 348 + i * 16), fill=(100, 136, 180), width=3)
-        if i < 5:
-            draw.line((984 + i * 16, 348, 984 + i * 16, 434), fill=(100, 136, 180), width=3)
-    disclaimer = "本视频仅供健康科普，具体诊疗请遵医嘱"
-    draw.text((704, 478), disclaimer, font=SMALL_FONT, fill=(74, 104, 138))
+        draw.line((952, 302 + i * 16, 1038, 302 + i * 16), fill=(100, 136, 180), width=3)
+    if phase == 1:
+        draw.text((672, 420), "本视频仅供健康科普，具体诊疗请遵医嘱", font=LABEL_FONT, fill=(74, 104, 138))
 
 
 SCENE_DRAWERS = [scene_one, scene_two, scene_three, scene_four, scene_five, scene_six]
 
 
-def render_frame(scene_idx: int, frame_idx: int, frames_per_scene: int):
-    progress = frame_idx / max(1, frames_per_scene - 1) if frames_per_scene > 1 else 1.0
+def render_frame(segment: dict, frame_idx: int, frames_per_segment: int):
+    progress = frame_idx / max(1, frames_per_segment - 1) if frames_per_segment > 1 else 1.0
+    scene_idx = segment["scene"] - 1
     canvas = BASE_BG.copy()
     draw = ImageDraw.Draw(canvas, "RGBA")
-    draw_title(draw, scene_idx + 1, SCENES[scene_idx]["title"])
-    SCENE_DRAWERS[scene_idx](canvas, draw, progress)
+    draw_header(draw, segment["scene"], segment["overlay"])
+    SCENE_DRAWERS[scene_idx](canvas, draw, progress, segment["phase"])
     add_realistic_grade(canvas, scene_idx, progress)
-    draw_subtitle(draw, SCENES[scene_idx]["narration"])
+    draw_subtitle(draw, segment["narration"])
     canvas.alpha_composite(VIGNETTE)
     fade = 1.0
-    if progress < 0.12:
-        fade = progress / 0.12
-    elif progress > 0.88:
-        fade = (1.0 - progress) / 0.12
+    if progress < 0.1:
+        fade = progress / 0.1
+    elif progress > 0.9:
+        fade = (1.0 - progress) / 0.1
     if fade < 1.0:
-        overlay = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, int((1 - fade) * 255)))
-        canvas.alpha_composite(overlay)
+        canvas.alpha_composite(Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, int((1 - fade) * 255))))
     return canvas.convert("RGB")
 
 
-def encode_video(frame_dir: Path, silent_video: Path):
+def encode_video(frame_dir: Path, silent_video: Path, frame_count: int):
     cmd = [
-        "ffmpeg",
-        "-y",
-        "-framerate",
-        str(FPS),
-        "-i",
-        str(frame_dir / "frame_%05d.png"),
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-movflags",
-        "+faststart",
+        "ffmpeg", "-y", "-framerate", str(FPS),
+        "-i", str(frame_dir / "frame_%05d.png"),
+        "-frames:v", str(frame_count),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
         str(silent_video),
     ]
     subprocess.run(cmd, check=True)
@@ -444,108 +435,66 @@ def encode_video(frame_dir: Path, silent_video: Path):
 
 def probe_duration(path: Path) -> float:
     result = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        capture_output=True, text=True, check=True,
     )
     return float(result.stdout.strip())
 
 
-async def synthesize_scene_voices(temp_root: Path) -> list[dict]:
-    scene_audio = []
-    for idx, scene in enumerate(SCENES):
-        audio_path = temp_root / f"voice_scene_{idx + 1:02d}.mp3"
-        communicate = edge_tts.Communicate(text=scene["narration"], voice=VOICE_NAME, rate=VOICE_RATE)
-        await communicate.save(str(audio_path))
+async def synthesize_segment_voices(temp_root: Path) -> list[dict]:
+    timings = []
+    for idx, segment in enumerate(SEGMENTS):
+        audio_path = temp_root / f"voice_seg_{idx + 1:02d}.mp3"
+        await edge_tts.Communicate(
+            text=segment["narration"], voice=VOICE_NAME, rate=VOICE_RATE
+        ).save(str(audio_path))
         voice_duration = probe_duration(audio_path)
-        scene_seconds = max(MIN_SCENE_SECONDS, voice_duration + SCENE_PAD_SECONDS)
-        scene_audio.append(
-            {
-                "path": audio_path,
-                "voice_duration": voice_duration,
-                "scene_seconds": scene_seconds,
-                "frames": max(1, int(round(scene_seconds * FPS))),
-            }
-        )
-        print(
-            f"Scene {idx + 1} voice: {voice_duration:.2f}s -> video: {scene_seconds:.2f}s",
-            flush=True,
-        )
-    return scene_audio
+        seg_seconds = max(MIN_SEGMENT_SECONDS, voice_duration + SCENE_PAD_SECONDS)
+        timings.append({
+            "segment": segment,
+            "path": audio_path,
+            "voice_duration": voice_duration,
+            "seg_seconds": seg_seconds,
+            "frames": max(1, int(round(seg_seconds * FPS))),
+        })
+        print(f"Segment {idx + 1:02d} [场景{segment['scene']}]: {voice_duration:.2f}s -> {seg_seconds:.2f}s", flush=True)
+    return timings
 
 
-def concat_voice_tracks(scene_audio: list[dict], output_path: Path):
-    inputs = []
-    chains = []
-    for idx, item in enumerate(scene_audio):
+def concat_voice_tracks(timings: list[dict], output_path: Path):
+    inputs, chains = [], []
+    for idx, item in enumerate(timings):
         inputs.extend(["-i", str(item["path"])])
-        pad = max(0.0, item["scene_seconds"] - item["voice_duration"])
+        pad = max(0.0, item["seg_seconds"] - item["voice_duration"])
         chains.append(f"[{idx}:a]apad=pad_dur={pad:.3f}[a{idx}]")
-    concat_inputs = "".join(f"[a{idx}]" for idx in range(len(scene_audio)))
-    filter_graph = ";".join(chains) + f";{concat_inputs}concat=n={len(scene_audio)}:v=0:a=1[aout]"
-    cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", filter_graph, "-map", "[aout]", str(output_path)]
-    subprocess.run(cmd, check=True)
+    concat_inputs = "".join(f"[a{idx}]" for idx in range(len(timings)))
+    filter_graph = ";".join(chains) + f";{concat_inputs}concat=n={len(timings)}:v=0:a=1[aout]"
+    subprocess.run(["ffmpeg", "-y", *inputs, "-filter_complex", filter_graph, "-map", "[aout]", str(output_path)], check=True)
 
 
 def generate_bgm(duration_sec: float, output_path: Path):
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-f",
-        "lavfi",
-        "-i",
-        f"sine=frequency=196:duration={duration_sec}:sample_rate=44100",
-        "-f",
-        "lavfi",
-        "-i",
-        f"sine=frequency=294:duration={duration_sec}:sample_rate=44100",
-        "-f",
-        "lavfi",
-        "-i",
-        f"sine=frequency=392:duration={duration_sec}:sample_rate=44100",
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i", f"sine=frequency=196:duration={duration_sec}:sample_rate=44100",
+        "-f", "lavfi", "-i", f"sine=frequency=294:duration={duration_sec}:sample_rate=44100",
+        "-f", "lavfi", "-i", f"sine=frequency=392:duration={duration_sec}:sample_rate=44100",
         "-filter_complex",
-        "[0:a]volume=0.05[a0];[1:a]volume=0.035[a1];[2:a]volume=0.025[a2];"
-        "[a0][a1][a2]amix=inputs=3,lowpass=f=1800,afade=t=in:st=0:d=1.5,afade=t=out:st="
-        f"{max(0.0, duration_sec - 2.0)}:d=2.0",
+        "[0:a]volume=0.04[a0];[1:a]volume=0.03[a1];[2:a]volume=0.02[a2];"
+        f"[a0][a1][a2]amix=inputs=3,lowpass=f=1600,afade=t=in:st=0:d=2,afade=t=out:st={max(0.0, duration_sec - 2.5)}:d=2.5",
         str(output_path),
-    ]
-    subprocess.run(cmd, check=True)
+    ], check=True)
 
 
 def mux_audio_video(silent_video: Path, voice_audio: Path, bgm_audio: Path):
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(silent_video),
-        "-i",
-        str(voice_audio),
-        "-i",
-        str(bgm_audio),
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-i", str(silent_video), "-i", str(voice_audio), "-i", str(bgm_audio),
         "-filter_complex",
-        "[1:a]volume=1.15[voice];[2:a]volume=0.55[bgm];"
-        "[bgm][voice]amix=inputs=2:duration=first:dropout_transition=2[aout]",
-        "-map",
-        "0:v:0",
-        "-map",
-        "[aout]",
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
+        "[1:a]volume=1.2[voice];[2:a]volume=0.45[bgm];[bgm][voice]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+        "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac",
         str(OUTPUT_VIDEO),
-    ]
-    subprocess.run(cmd, check=True)
+    ], check=True)
 
 
 def main():
@@ -557,26 +506,23 @@ def main():
         voice_audio = temp_root / "voice_cn.mp3"
         bgm_audio = temp_root / "bgm.wav"
         frame_dir.mkdir(parents=True, exist_ok=True)
-        scene_audio = asyncio.run(synthesize_scene_voices(temp_root))
+        timings = asyncio.run(synthesize_segment_voices(temp_root))
         total_frames = 0
-        for scene_idx, timing in enumerate(scene_audio):
-            frames_per_scene = timing["frames"]
-            print(
-                f"Rendering scene {scene_idx + 1}/{TOTAL_SCENES} ({frames_per_scene} frames)...",
-                flush=True,
-            )
-            for frame_idx in range(frames_per_scene):
-                image = render_frame(scene_idx, frame_idx, frames_per_scene)
-                out = frame_dir / f"frame_{total_frames:05d}.png"
-                image.save(out, quality=95)
+        for idx, timing in enumerate(timings):
+            frames = timing["frames"]
+            seg = timing["segment"]
+            print(f"Rendering segment {idx + 1}/{len(timings)} scene {seg['scene']} phase {seg['phase']}...", flush=True)
+            for frame_idx in range(frames):
+                image = render_frame(seg, frame_idx, frames)
+                image.save(frame_dir / f"frame_{total_frames:05d}.png", quality=95)
                 total_frames += 1
         shutil.copy(frame_dir / f"frame_{total_frames - 1:05d}.png", OUTPUT_POSTER)
-        encode_video(frame_dir, silent_video)
-        concat_voice_tracks(scene_audio, voice_audio)
-        total_duration = probe_duration(silent_video)
-        generate_bgm(total_duration, bgm_audio)
+        encode_video(frame_dir, silent_video, total_frames)
+        concat_voice_tracks(timings, voice_audio)
+        generate_bgm(probe_duration(silent_video), bgm_audio)
         mux_audio_video(silent_video, voice_audio, bgm_audio)
-        print(f"Video written to {OUTPUT_VIDEO}")
+        duration = probe_duration(OUTPUT_VIDEO)
+        print(f"Video written to {OUTPUT_VIDEO} ({duration:.1f}s, {len(SEGMENTS)} segments)")
         print(f"Poster written to {OUTPUT_POSTER}")
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
