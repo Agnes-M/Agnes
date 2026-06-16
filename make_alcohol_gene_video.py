@@ -536,6 +536,16 @@ async def synthesize_segment_voices(temp_root: Path) -> list[dict]:
             "frames": max(1, int(round(seg_seconds * FPS))),
         })
         print(f"Segment {idx + 1:02d} [场景{segment['scene']}]: {voice_duration:.2f}s -> {seg_seconds:.2f}s", flush=True)
+
+    # 交叉淡入淡出会重叠部分帧，给每段（除最后一段）补回等量帧，保证总时长与配音一致。
+    for i in range(len(timings) - 1):
+        overlap = transition_frame_count(
+            timings[i]["segment"],
+            timings[i + 1]["segment"],
+            timings[i]["frames"],
+            timings[i + 1]["frames"],
+        )
+        timings[i]["frames"] += overlap
     return timings
 
 
