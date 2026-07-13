@@ -15,7 +15,6 @@ SCRIPT_PATH = Path(__file__).resolve().parents[1] / "vocab_dictation_sheet.py"
 SOURCE_PDF = Path(
     "/home/ubuntu/.cursor/projects/workspace/uploads/________688____1__c33e.pdf"
 )
-CHINESE_FONT = "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"
 
 
 class VocabDictationSheetTests(unittest.TestCase):
@@ -27,7 +26,7 @@ class VocabDictationSheetTests(unittest.TestCase):
         self.assertEqual(numbers, set(range(1, 689)))
 
     @unittest.skipUnless(SOURCE_PDF.exists(), "source vocabulary PDF is unavailable")
-    def test_generated_pdf_has_dictation_lines_and_chinese(self) -> None:
+    def test_generated_pdf_matches_claude_style_layout(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_pdf = Path(tmpdir) / "sheet.pdf"
             subprocess.run(
@@ -42,10 +41,12 @@ class VocabDictationSheetTests(unittest.TestCase):
             page_count = doc.page_count
             doc.close()
 
-            self.assertGreaterEqual(page_count, 10)
-            self.assertIn("默写练习", text)
-            self.assertIn("私人的，个人的", text)
-            self.assertIn("英文", text)
+            self.assertEqual(page_count, 13)
+            self.assertIn("中译英默写本", text)
+            self.assertIn("词性提示已保留", text)
+            self.assertIn("中文释义", text)
+            self.assertIn("英文默写", text)
+            self.assertIn("adj.私人的，个人的", text)
             self.assertNotIn("personal", text.lower())
 
     def test_parse_mini_sample_lines(self) -> None:
@@ -62,9 +63,9 @@ class VocabDictationSheetTests(unittest.TestCase):
         )
         by_number = {entry.number: entry for entry in entries}
         self.assertEqual(by_number[1].english, "personal")
-        self.assertEqual(by_number[1].chinese, "私人的，个人的")
+        self.assertEqual(by_number[1].meaning, "adj.私人的，个人的")
         self.assertEqual(by_number[262].english, "adolescent")
-        self.assertEqual(by_number[656].chinese, "民主的")
+        self.assertEqual(by_number[656].meaning, "adj.民主的")
         self.assertEqual(by_number[668].english, "time-consuming")
 
 
