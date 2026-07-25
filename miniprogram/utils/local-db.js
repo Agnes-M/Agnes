@@ -1,4 +1,5 @@
 const { generateId } = require('./util');
+const seedData = require('./seed-data');
 
 const STORAGE_KEYS = {
   reps: 'db_reps',
@@ -6,10 +7,6 @@ const STORAGE_KEYS = {
   projects: 'db_projects',
   initialized: 'db_initialized'
 };
-
-const SEED_REPS = require('../seed-data/reps.json');
-const SEED_HOSPITALS = require('../seed-data/hospitals.json');
-const SEED_PROJECTS = require('../seed-data/projects.json');
 
 function readCollection(key) {
   return wx.getStorageSync(key) || [];
