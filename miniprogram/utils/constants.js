@@ -38,10 +38,10 @@ const BUSINESS_SYSTEMS = [
 
 /** 状态对应的样式类名 */
 const STATUS_CLASS_MAP = {
-  '加项入院': 'status-加项入院',
-  '已入院-上量': 'status-已入院-上量',
-  '未入院-上量': 'status-未入院-上量',
-  '非重点跟进': 'status-非重点跟进'
+  '加项入院': 'status-adding',
+  '已入院-上量': 'status-onboard',
+  '未入院-上量': 'status-offboard',
+  '非重点跟进': 'status-low-priority'
 };
 
 module.exports = {

@@ -105,22 +105,22 @@ page {
   margin-top: 8rpx;
 }
 
-.status-加项入院 {
+.status-adding {
   background: #e6f4ff;
   color: #1677ff;
 }
 
-.status-已入院-上量 {
+.status-onboard {
   background: #f6ffed;
   color: #52c41a;
 }
 
-.status-未入院-上量 {
+.status-offboard {
   background: #fff7e6;
   color: #fa8c16;
 }
 
-.status-非重点跟进 {
+.status-low-priority {
   background: #f5f5f5;
   color: #999;
 }

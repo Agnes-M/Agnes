@@ -39,7 +39,7 @@ Page({
       const res = await dbApi.listProjectsByHospital(this.data.hospitalId);
       const projects = res.data.map((p) => ({
         ...p,
-        statusClass: STATUS_CLASS_MAP[p.status] || 'status-非重点跟进'
+        statusClass: STATUS_CLASS_MAP[p.status] || 'status-low-priority'
       }));
       this.setData({ projects, loading: false });
     } catch (err) {
