@@ -1,0 +1,18 @@
+{
+  "pages": [
+    "pages/rep-list/rep-list",
+    "pages/hospital-list/hospital-list",
+    "pages/project-list/project-list",
+    "pages/project-detail/project-detail"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#1677ff",
+    "navigationBarTitleText": "重大项目跟进",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f6f8"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

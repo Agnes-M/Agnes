@@ -1,0 +1,64 @@
+<view class="container">
+  <view class="breadcrumb">
+    <text class="highlight">{{repName}}</text>
+    <text> > </text>
+    <text class="highlight">{{hospitalName}}</text>
+  </view>
+
+  <view class="toolbar">
+    <text class="toolbar-tip">共 {{projects.length}} 个项目</text>
+    <text class="add-link" bindtap="onShowAddModal">+ 新增项目</text>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty-tip">加载中...</view>
+
+  <view wx:elif="{{projects.length === 0}}" class="empty-tip">
+    暂无项目，点击右上角「+ 新增项目」
+  </view>
+
+  <view wx:else class="project-list">
+    <view
+      wx:for="{{projects}}"
+      wx:key="_id"
+      class="list-item"
+      data-project="{{item}}"
+      bindtap="onSelectProject"
+    >
+      <view class="list-item-main">
+        <view class="list-item-title">{{item.name}}</view>
+        <view wx:if="{{item.status}}" class="status-tag {{item.statusClass}}">{{item.status}}</view>
+        <view wx:else class="list-item-sub">未设置状态</view>
+      </view>
+      <text class="list-item-arrow">›</text>
+    </view>
+  </view>
+
+  <!-- 新增项目弹窗 -->
+  <view wx:if="{{showAddModal}}" class="modal-mask" bindtap="onHideAddModal">
+    <view class="modal-content" catchtap="">
+      <view class="modal-title">新增项目</view>
+
+      <view class="toggle-row" bindtap="onToggleCustomName">
+        <text>{{useCustomName ? '手动输入项目名称' : '从预设列表选择'}}</text>
+        <text class="toggle-link">切换</text>
+      </view>
+
+      <view wx:if="{{!useCustomName}}" class="modal-field">
+        <text class="field-label">项目类型</text>
+        <picker mode="selector" range="{{presetTypes}}" value="{{selectedTypeIndex}}" bindchange="onTypeChange">
+          <view class="picker-value">{{presetTypes[selectedTypeIndex]}}</view>
+        </picker>
+      </view>
+
+      <view wx:else class="modal-field">
+        <text class="field-label">自定义项目名称</text>
+        <input class="field-input" placeholder="请输入项目名称" value="{{customProjectName}}" bindinput="onCustomNameInput" />
+      </view>
+
+      <view class="modal-actions">
+        <button class="btn-cancel" bindtap="onHideAddModal">取消</button>
+        <button class="btn-confirm" bindtap="onConfirmAdd">确定</button>
+      </view>
+    </view>
+  </view>
+</view>

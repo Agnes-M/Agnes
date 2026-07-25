@@ -1,0 +1,71 @@
+<view class="container">
+  <view class="breadcrumb">
+    <text class="highlight">{{repName}}</text>
+  </view>
+
+  <view class="search-bar">
+    <input
+      class="search-input"
+      placeholder="搜索医院名称"
+      value="{{keyword}}"
+      bindinput="onSearchInput"
+      confirm-type="search"
+    />
+  </view>
+
+  <view class="toolbar">
+    <text class="toolbar-tip">共 {{filteredHospitals.length}} 家医院</text>
+    <text class="add-link" bindtap="onShowAddModal">+ 新增医院</text>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty-tip">加载中...</view>
+
+  <view wx:elif="{{filteredHospitals.length === 0}}" class="empty-tip">
+    {{keyword ? '未找到匹配的医院' : '暂无医院数据'}}
+  </view>
+
+  <view wx:else class="hospital-list">
+    <view
+      wx:for="{{filteredHospitals}}"
+      wx:key="_id"
+      class="list-item"
+      data-hospital="{{item}}"
+      bindtap="onSelectHospital"
+    >
+      <view class="list-item-main">
+        <view class="list-item-title">{{item.name}}</view>
+        <view class="list-item-sub">
+          {{item.level}} · {{item.businessSystem}} · {{item.projectCount}} 个项目
+        </view>
+      </view>
+      <text class="list-item-arrow">›</text>
+    </view>
+  </view>
+
+  <!-- 新增医院弹窗 -->
+  <view wx:if="{{showAddModal}}" class="modal-mask" bindtap="onHideAddModal">
+    <view class="modal-content" catchtap="">
+      <view class="modal-title">新增医院</view>
+      <view class="modal-field">
+        <text class="field-label">医院名称</text>
+        <input class="field-input" placeholder="请输入医院名称" value="{{newHospital.name}}" bindinput="onNewHospitalInput" />
+      </view>
+      <view class="modal-field">
+        <text class="field-label">医院等级</text>
+        <picker mode="selector" range="{{hospitalLevels}}" value="{{newHospital.levelIndex}}" bindchange="onLevelChange">
+          <view class="picker-value">{{hospitalLevels[newHospital.levelIndex]}}</view>
+        </picker>
+      </view>
+      <view class="modal-field">
+        <text class="field-label">业务体系</text>
+        <picker mode="selector" range="{{businessSystems}}" value="{{newHospital.businessSystemIndex}}" bindchange="onBusinessSystemChange">
+          <view class="picker-value">{{businessSystems[newHospital.businessSystemIndex]}}</view>
+        </picker>
+      </view>
+      <view class="modal-actions">
+        <button class="btn-cancel" bindtap="onHideAddModal">取消</button>
+        <button class="btn-confirm" bindtap="onConfirmAdd">确定</button>
+      </view>
+    </view>
+  </view>
+</view>
