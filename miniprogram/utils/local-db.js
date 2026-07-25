@@ -20,9 +20,9 @@ function ensureInitialized() {
   if (wx.getStorageSync(STORAGE_KEYS.initialized)) {
     return;
   }
-  writeCollection(STORAGE_KEYS.reps, SEED_REPS);
-  writeCollection(STORAGE_KEYS.hospitals, SEED_HOSPITALS);
-  writeCollection(STORAGE_KEYS.projects, SEED_PROJECTS);
+  writeCollection(STORAGE_KEYS.reps, seedData.reps);
+  writeCollection(STORAGE_KEYS.hospitals, seedData.hospitals);
+  writeCollection(STORAGE_KEYS.projects, seedData.projects);
   wx.setStorageSync(STORAGE_KEYS.initialized, true);
 }
 

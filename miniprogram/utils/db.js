@@ -3,8 +3,15 @@ const localDb = require('./local-db');
 let cloudDb = null;
 
 function useLocalStorage() {
-  const app = getApp();
-  return app && app.globalData && app.globalData.useLocalStorage === true;
+  try {
+    const app = getApp();
+    if (app && app.globalData && app.globalData.useLocalStorage === true) {
+      return true;
+    }
+  } catch (e) {
+    // getApp 在极早期可能不可用，默认走本地模式
+  }
+  return true;
 }
 
 function getCloudDb() {
