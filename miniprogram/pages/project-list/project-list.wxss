@@ -1,0 +1,93 @@
+.project-list {
+  padding-bottom: 160rpx;
+}
+
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0 24rpx;
+  font-size: 26rpx;
+  color: #666;
+}
+
+.toggle-link {
+  color: #1677ff;
+}
+
+.modal-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  width: 85%;
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 40rpx 32rpx;
+}
+
+.modal-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 16rpx;
+}
+
+.modal-field {
+  margin-bottom: 24rpx;
+}
+
+.field-label {
+  display: block;
+  font-size: 26rpx;
+  color: #666;
+  margin-bottom: 12rpx;
+}
+
+.field-input {
+  background: #f5f6f8;
+  border-radius: 8rpx;
+  padding: 16rpx 20rpx;
+  font-size: 28rpx;
+}
+
+.picker-value {
+  background: #f5f6f8;
+  border-radius: 8rpx;
+  padding: 16rpx 20rpx;
+  font-size: 28rpx;
+  color: #333;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 32rpx;
+}
+
+.btn-cancel,
+.btn-confirm {
+  flex: 1;
+  font-size: 28rpx;
+  border-radius: 8rpx;
+  padding: 16rpx 0;
+}
+
+.btn-cancel {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.btn-confirm {
+  background: #1677ff;
+  color: #fff;
+}

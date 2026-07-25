@@ -1,0 +1,117 @@
+<view class="container">
+  <view class="breadcrumb">
+    <text class="highlight">{{repName}}</text>
+    <text> > </text>
+    <text class="highlight">{{hospitalName}}</text>
+    <text> > </text>
+    <text class="highlight">{{projectName}}</text>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty-tip">加载中...</view>
+
+  <view wx:else class="form-wrapper">
+    <view wx:if="{{updatedAtText}}" class="update-info">
+      上次更新：{{updatedAtText}}<text wx:if="{{updatedBy}}"> 由 {{updatedBy}}</text>
+    </view>
+
+    <view class="form-section">
+      <view class="form-item">
+        <text class="form-label">项目名称</text>
+        <input class="form-input" value="{{form.name}}" disabled />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">标段信息</text>
+        <input class="form-input" placeholder="请输入标段信息" value="{{form.biddingInfo}}" data-field="biddingInfo" bindinput="onInput" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">折扣（%）</text>
+        <input class="form-input" placeholder="如：普检19%；特检38%" value="{{form.discount}}" data-field="discount" bindinput="onInput" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">加项难度</text>
+        <textarea class="form-textarea" placeholder="填写加项的具体阻碍和策略" value="{{form.addDifficulty}}" data-field="addDifficulty" bindinput="onInput" auto-height maxlength="-1" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">当前状态</text>
+        <picker mode="selector" range="{{statusOptions}}" value="{{form.statusIndex >= 0 ? form.statusIndex : 0}}" bindchange="onStatusChange">
+          <view class="picker-display">
+            <text wx:if="{{form.status}}">{{form.status}}</text>
+            <text wx:else class="placeholder">请选择当前状态</text>
+            <text class="picker-arrow">▼</text>
+          </view>
+        </picker>
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">当前月均销量</text>
+        <input class="form-input" type="digit" placeholder="未入院填0" value="{{form.currentMonthlyVolume}}" data-field="currentMonthlyVolume" bindinput="onInput" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">目标销量/月</text>
+        <input class="form-input" type="digit" placeholder="请输入目标销量" value="{{form.targetMonthlyVolume}}" data-field="targetMonthlyVolume" bindinput="onInput" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">重点科室/关键人物（1）</text>
+        <input class="form-input" placeholder="最多填2个" value="{{form.keyDepartment1}}" data-field="keyDepartment1" bindinput="onInput" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">重点科室/关键人物（2）</text>
+        <input class="form-input" placeholder="最多填2个" value="{{form.keyDepartment2}}" data-field="keyDepartment2" bindinput="onInput" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">具体行动计划</text>
+        <textarea class="form-textarea" placeholder="请输入具体行动计划" value="{{form.actionPlan}}" data-field="actionPlan" bindinput="onInput" auto-height maxlength="-1" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">本周进展</text>
+        <textarea class="form-textarea" placeholder="请输入本周进展" value="{{form.weeklyProgress}}" data-field="weeklyProgress" bindinput="onInput" auto-height maxlength="-1" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">下周计划</text>
+        <textarea class="form-textarea" placeholder="请输入下周计划" value="{{form.nextWeekPlan}}" data-field="nextWeekPlan" bindinput="onInput" auto-height maxlength="-1" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">卡点</text>
+        <textarea class="form-textarea" placeholder="请输入当前卡点" value="{{form.blocker}}" data-field="blocker" bindinput="onInput" auto-height maxlength="-1" />
+      </view>
+
+      <!-- tNGS 专属字段，条件渲染 -->
+      <block wx:if="{{isTNGS}}">
+        <view class="form-item tngs-field">
+          <text class="form-label">本周气管镜例数</text>
+          <input class="form-input" type="digit" placeholder="请输入例数" value="{{form.bronchoscopyCases}}" data-field="bronchoscopyCases" bindinput="onInput" />
+        </view>
+
+        <view class="form-item tngs-field">
+          <text class="form-label">本周肺泡灌洗液送检量</text>
+          <input class="form-input" type="digit" placeholder="请输入送检量" value="{{form.bronchoalveolarLavage}}" data-field="bronchoalveolarLavage" bindinput="onInput" />
+        </view>
+      </block>
+
+      <view class="form-item">
+        <text class="form-label">备注</text>
+        <textarea class="form-textarea" placeholder="请输入备注" value="{{form.remark}}" data-field="remark" bindinput="onInput" auto-height maxlength="-1" />
+      </view>
+
+      <view class="form-item">
+        <text class="form-label">市场部备注</text>
+        <textarea class="form-textarea" placeholder="请输入市场部备注" value="{{form.marketRemark}}" data-field="marketRemark" bindinput="onInput" auto-height maxlength="-1" />
+      </view>
+    </view>
+  </view>
+
+  <view class="save-bar" wx:if="{{!loading}}">
+    <button class="save-btn" bindtap="onSave" loading="{{saving}}" disabled="{{saving}}">保存</button>
+  </view>
+</view>

@@ -1,0 +1,30 @@
+[
+  {
+    "_id": "hosp_demo_001",
+    "repId": "rep_demo_fufang",
+    "name": "宁波明州医院",
+    "level": "民营一级",
+    "businessSystem": "常规业务"
+  },
+  {
+    "_id": "hosp_demo_002",
+    "repId": "rep_demo_fufang",
+    "name": "杭州市第一人民医院",
+    "level": "公立三级",
+    "businessSystem": "共建客户(专线)"
+  },
+  {
+    "_id": "hosp_demo_003",
+    "repId": "rep_demo_wangming",
+    "name": "宁波市第二医院",
+    "level": "公立三级",
+    "businessSystem": "常规业务"
+  },
+  {
+    "_id": "hosp_demo_004",
+    "repId": "rep_demo_chenli",
+    "name": "温州医科大学附属第一医院",
+    "level": "公立三级",
+    "businessSystem": "常规业务"
+  }
+]
