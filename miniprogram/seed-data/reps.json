@@ -1,0 +1,23 @@
+[
+  {
+    "_id": "rep_demo_fufang",
+    "name": "傅芳",
+    "supervisor": "张主管",
+    "manager": "李经理",
+    "region": "01杭州"
+  },
+  {
+    "_id": "rep_demo_wangming",
+    "name": "王明",
+    "supervisor": "张主管",
+    "manager": "李经理",
+    "region": "02宁波"
+  },
+  {
+    "_id": "rep_demo_chenli",
+    "name": "陈丽",
+    "supervisor": "赵主管",
+    "manager": "周经理",
+    "region": "03温州"
+  }
+]

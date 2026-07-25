@@ -1,0 +1,38 @@
+<view class="container">
+  <view class="page-header">
+    <text class="page-title">选择销售代表</text>
+    <text class="page-desc">点击你的名字进入医院列表</text>
+  </view>
+
+  <view class="search-bar">
+    <input
+      class="search-input"
+      placeholder="搜索代表姓名"
+      value="{{keyword}}"
+      bindinput="onSearchInput"
+      confirm-type="search"
+    />
+  </view>
+
+  <view wx:if="{{loading}}" class="empty-tip">加载中...</view>
+
+  <view wx:elif="{{filteredReps.length === 0}}" class="empty-tip">
+    {{keyword ? '未找到匹配的代表' : '暂无销售代表数据，请先导入种子数据'}}
+  </view>
+
+  <view wx:else class="rep-list">
+    <view
+      wx:for="{{filteredReps}}"
+      wx:key="_id"
+      class="list-item"
+      data-rep="{{item}}"
+      bindtap="onSelectRep"
+    >
+      <view class="list-item-main">
+        <view class="list-item-title">{{item.name}}</view>
+        <view class="list-item-sub">{{item.region}} · 主管：{{item.supervisor}} · 经理：{{item.manager}}</view>
+      </view>
+      <text class="list-item-arrow">›</text>
+    </view>
+  </view>
+</view>
