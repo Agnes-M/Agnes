@@ -33,6 +33,7 @@ const HOSPITAL_LEVELS = [
 const BUSINESS_SYSTEMS = [
   '常规业务',
   '共建客户(专线)',
+  '共建客户(混线)',
   '其它'
 ];
 

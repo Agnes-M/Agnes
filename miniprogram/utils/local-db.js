@@ -5,11 +5,12 @@ const STORAGE_KEYS = {
   reps: 'db_reps',
   hospitals: 'db_hospitals',
   projects: 'db_projects',
-  initialized: 'db_initialized'
+  dataVersion: 'db_data_version'
 };
 
 function readCollection(key) {
-  return wx.getStorageSync(key) || [];
+  const data = wx.getStorageSync(key);
+  return Array.isArray(data) ? data : [];
 }
 
 function writeCollection(key, records) {
@@ -17,13 +18,16 @@ function writeCollection(key, records) {
 }
 
 function ensureInitialized() {
-  if (wx.getStorageSync(STORAGE_KEYS.initialized)) {
+  const version = wx.getStorageSync(STORAGE_KEYS.dataVersion);
+  const reps = readCollection(STORAGE_KEYS.reps);
+  if (version === seedData.dataVersion && reps.length > 0) {
     return;
   }
+
   writeCollection(STORAGE_KEYS.reps, seedData.reps);
   writeCollection(STORAGE_KEYS.hospitals, seedData.hospitals);
-  writeCollection(STORAGE_KEYS.projects, seedData.projects);
-  wx.setStorageSync(STORAGE_KEYS.initialized, true);
+  writeCollection(STORAGE_KEYS.projects, seedData.projects || []);
+  wx.setStorageSync(STORAGE_KEYS.dataVersion, seedData.dataVersion);
 }
 
 function sortByName(records) {

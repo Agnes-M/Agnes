@@ -5,10 +5,15 @@
     <text class="highlight">{{hospitalName}}</text>
   </view>
 
+  <view class="toolbar">
+    <text class="toolbar-tip">共 {{projects.length}} 个项目</text>
+    <text class="add-link" bindtap="onShowAddModal">+ 新增项目</text>
+  </view>
+
   <view wx:if="{{loading}}" class="empty-tip">加载中...</view>
 
   <view wx:elif="{{projects.length === 0}}" class="empty-tip">
-    暂无项目，点击下方按钮新增
+    暂无项目，点击右上角「+ 新增项目」
   </view>
 
   <view wx:else class="project-list">
@@ -27,8 +32,6 @@
       <text class="list-item-arrow">›</text>
     </view>
   </view>
-
-  <view class="fab-btn" bindtap="onShowAddModal">+ 新增项目</view>
 
   <!-- 新增项目弹窗 -->
   <view wx:if="{{showAddModal}}" class="modal-mask" bindtap="onHideAddModal">

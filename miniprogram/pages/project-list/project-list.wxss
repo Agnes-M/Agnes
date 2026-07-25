@@ -1,5 +1,24 @@
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 32rpx;
+  background: #fff;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.toolbar-tip {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.add-link {
+  font-size: 26rpx;
+  color: #1677ff;
+}
+
 .project-list {
-  padding-bottom: 160rpx;
+  padding-bottom: 40rpx;
 }
 
 .toggle-row {
