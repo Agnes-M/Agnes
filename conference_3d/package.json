@@ -1,0 +1,17 @@
+{
+  "name": "conference_3d",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "render": "node render.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer": "^25.5.0",
+    "three": "^0.185.1"
+  }
+}
